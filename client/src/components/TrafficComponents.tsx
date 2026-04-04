@@ -12,31 +12,89 @@ export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 export type SearchScope = 'url' | 'req_headers' | 'req_body' | 'res_headers' | 'res_body';
 
 export interface SearchCondition {
-  id: string;       // React key only — stripped before sending to server
+  id: string;
   term: string;
-  scopes: SearchScope[];  // empty = all fields
+  scopes: SearchScope[];
 }
 
 export function genCondId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+export type FilterField = 'scope' | 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
+
+export interface FilterCondition {
+  id: string;
+  field: FilterField | '';
+  logic: 'and' | 'or';
+  values: string[];
+  term: string;
+  scopes: SearchScope[];
+}
+
+export function createEmptyFilterCondition(): FilterCondition {
+  return {
+    id: genCondId(),
+    field: '',
+    logic: 'and',
+    values: [],
+    term: '',
+    scopes: [],
+  };
+}
+
+export function createScopeFilterCondition(scope: 'mine' | 'all' = 'mine'): FilterCondition {
+  return {
+    id: genCondId(),
+    field: 'scope',
+    logic: 'and',
+    values: [scope],
+    term: '',
+    scopes: [],
+  };
+}
+
+export function createPresetFilterCondition(
+  field: Exclude<FilterField, 'text'>,
+  values: string[] = [],
+): FilterCondition {
+  return {
+    id: genCondId(),
+    field,
+    logic: 'and',
+    values,
+    term: '',
+    scopes: [],
+  };
+}
+
+export function isFilterConditionActive(condition: FilterCondition): boolean {
+  if (condition.field === 'text') return condition.term.trim().length > 0;
+  return condition.field !== '' && condition.values.length > 0;
+}
+
 // ─── MultiSelect ─────────────────────────────────────────────────────────────
 
 export function MultiSelect({
-  placeholder, options, selected, onChange,
+  placeholder, options, selected, onChange, filterable = false, searchPlaceholder = 'Filter options...',
 }: {
   placeholder: string;
   options: { value: string; label: string }[];
   selected: string[];
   onChange: (vals: string[]) => void;
+  filterable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -50,11 +108,22 @@ export function MultiSelect({
     : selected.length <= 2 ? selected.join(', ')
     : `${selected[0]} +${selected.length - 1}`;
 
+  const loweredQuery = query.trim().toLowerCase();
+  const visibleOptions = loweredQuery
+    ? options.filter((option) => option.label.toLowerCase().includes(loweredQuery) || option.value.toLowerCase().includes(loweredQuery))
+    : options;
+
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          setOpen((current) => {
+            const next = !current;
+            if (!next) setQuery('');
+            return next;
+          });
+        }}
         className={`${SEL_CLS} flex items-center gap-1.5 min-w-[120px] cursor-pointer`}
       >
         <span className="flex-1 text-left truncate">{label}</span>
@@ -68,6 +137,20 @@ export function MultiSelect({
 
       {open && (
         <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg min-w-full">
+          {filterable && (
+            <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+              <div className="relative min-w-[220px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
           {selected.length > 0 && (
             <button
               onClick={() => onChange([])}
@@ -76,7 +159,7 @@ export function MultiSelect({
               Clear selection
             </button>
           )}
-          {options.map(opt => (
+          {visibleOptions.map(opt => (
             <label key={opt.value} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
               <input
                 type="checkbox"
@@ -87,6 +170,11 @@ export function MultiSelect({
               <span className="text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{opt.label}</span>
             </label>
           ))}
+          {visibleOptions.length === 0 && (
+            <div className="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+              No matching options
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -505,109 +593,320 @@ function ScopeSelect({ scopes, onChange }: {
   );
 }
 
-// ─── Search builder ───────────────────────────────────────────────────────────
+// ─── Connection filter builder ────────────────────────────────────────────────
 
-export function SearchBuilder({
-  conditions, logic, mode, onChange, onLogicChange, onModeChange,
+const FILTER_FIELD_OPTIONS: { value: FilterField; label: string }[] = [
+  { value: 'scope', label: 'Scope' },
+  { value: 'server_id', label: 'Server' },
+  { value: 'method', label: 'Method' },
+  { value: 'status', label: 'Status' },
+  { value: 'res_status_code', label: 'Status code' },
+  { value: 'user_id', label: 'User' },
+  { value: 'text', label: 'Text' },
+];
+
+function fieldLabel(field: FilterField | '') {
+  return FILTER_FIELD_OPTIONS.find((option) => option.value === field)?.label ?? 'Condition';
+}
+
+function FilterFieldSelect({
+  value,
+  options,
+  onChange,
 }: {
-  conditions: SearchCondition[];
-  logic: 'and' | 'or';
-  mode: 'highlight' | 'filter';
-  onChange: (c: SearchCondition[]) => void;
-  onLogicChange: (l: 'and' | 'or') => void;
-  onModeChange: (m: 'highlight' | 'filter') => void;
+  value: FilterField | '';
+  options: { value: FilterField; label: string }[];
+  onChange: (value: FilterField | '') => void;
 }) {
-  const updateCond = (id: string, patch: Partial<SearchCondition>) =>
-    onChange(conditions.map(c => c.id === id ? { ...c, ...patch } : c));
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange((e.target.value as FilterField | '') || '')}
+      className={`${SEL_CLS} min-w-[140px]`}
+    >
+      <option value="">Choose condition</option>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
-  const removeCond = (id: string) => {
-    const next = conditions.filter(c => c.id !== id);
-    onChange(next.length > 0 ? next : [{ id: genCondId(), term: '', scopes: [] }]);
-  };
+function ConditionValueInput({
+  condition,
+  serverOptions,
+  statusCodeOptions,
+  userOptions,
+  onChange,
+}: {
+  condition: FilterCondition;
+  serverOptions: { value: string; label: string }[];
+  statusCodeOptions: { value: string; label: string }[];
+  userOptions: { value: string; label: string }[];
+  onChange: (patch: Partial<FilterCondition>) => void;
+}) {
+  if (condition.field === 'scope') {
+    return (
+      <select
+        value={condition.values[0] ?? 'mine'}
+        onChange={(e) => onChange({ values: [e.target.value] })}
+        className={`${SEL_CLS} min-w-[140px]`}
+      >
+        <option value="mine">Mine</option>
+        <option value="all">All</option>
+      </select>
+    );
+  }
 
-  const addCond = () =>
-    onChange([...conditions, { id: genCondId(), term: '', scopes: [] }]);
+  if (condition.field === 'server_id') {
+    return (
+      <MultiSelect
+        placeholder="Servers"
+        options={serverOptions}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+      />
+    );
+  }
 
-  const hasAnyTerm = conditions.some(c => c.term.trim());
+  if (condition.field === 'method') {
+    return (
+      <MultiSelect
+        placeholder="Methods"
+        options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+      />
+    );
+  }
+
+  if (condition.field === 'status') {
+    return (
+      <MultiSelect
+        placeholder="Statuses"
+        options={[
+          { value: 'completed', label: 'Completed' },
+          { value: 'error', label: 'Error' },
+          { value: 'pending', label: 'Pending' },
+        ]}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+      />
+    );
+  }
+
+  if (condition.field === 'res_status_code') {
+    return (
+      <MultiSelect
+        placeholder="Status codes"
+        options={statusCodeOptions}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+        filterable
+        searchPlaceholder="Search status codes..."
+      />
+    );
+  }
+
+  if (condition.field === 'user_id') {
+    return (
+      <MultiSelect
+        placeholder="Users"
+        options={userOptions}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+        filterable
+        searchPlaceholder="Search users..."
+      />
+    );
+  }
+
+  if (condition.field === 'text') {
+    return (
+      <>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={condition.term}
+            onChange={(e) => onChange({ term: e.target.value })}
+            placeholder="Contains text..."
+            className="w-full pl-8 pr-7 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          {condition.term && (
+            <button
+              type="button"
+              onClick={() => onChange({ term: '' })}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <ScopeSelect scopes={condition.scopes} onChange={(scopes) => onChange({ scopes })} />
+      </>
+    );
+  }
 
   return (
-    <div className="space-y-1">
-      {conditions.map((cond, idx) => (
-        <div key={cond.id}>
-          {idx > 0 && (
-            <div className="flex items-center py-0.5 pl-1">
-              <button
-                type="button"
-                onClick={() => onLogicChange(logic === 'and' ? 'or' : 'and')}
-                title="Click to toggle AND / OR"
-                className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none"
-              >
-                {logic.toUpperCase()}
-              </button>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                value={cond.term}
-                onChange={e => updateCond(cond.id, { term: e.target.value })}
-                placeholder={idx === 0 ? 'Search…' : 'Another term…'}
-                className="w-full pl-8 pr-7 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+    <div className="min-w-[160px] px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded-md">
+      Select a field first
+    </div>
+  );
+}
+
+export function ConnectionFilterBuilder({
+  requiredConditions = [],
+  conditions,
+  serverOptions,
+  statusCodeOptions,
+  userOptions,
+  allowUserFilter,
+  allowScopeFilter = false,
+  onRequiredChange,
+  onChange,
+}: {
+  requiredConditions?: FilterCondition[];
+  conditions: FilterCondition[];
+  serverOptions: { value: string; label: string }[];
+  statusCodeOptions: { value: string; label: string }[];
+  userOptions: { value: string; label: string }[];
+  allowUserFilter: boolean;
+  allowScopeFilter?: boolean;
+  onRequiredChange?: (conditions: FilterCondition[]) => void;
+  onChange: (conditions: FilterCondition[]) => void;
+}) {
+  const isReusableField = (field: FilterField) => field === 'text';
+
+  const usedFields = [...requiredConditions, ...conditions]
+    .map((condition) => condition.field)
+    .filter((field): field is FilterField => field !== '' && !isReusableField(field));
+
+  const availableFieldOptions = FILTER_FIELD_OPTIONS.filter((option) => {
+    if (!allowUserFilter && option.value === 'user_id') return false;
+    if (!allowScopeFilter && option.value === 'scope') return false;
+    return true;
+  });
+
+  const updateCondition = (id: string, patch: Partial<FilterCondition>) =>
+    onChange(conditions.map((condition) => (condition.id === id ? { ...condition, ...patch } : condition)));
+
+  const updateRequiredCondition = (id: string, patch: Partial<FilterCondition>) => {
+    if (!onRequiredChange) return;
+    onRequiredChange(requiredConditions.map((condition) => (condition.id === id ? { ...condition, ...patch } : condition)));
+  };
+
+  const changeField = (id: string, field: FilterField | '') =>
+    onChange(
+      conditions.map((condition) => (
+        condition.id === id
+          ? { ...condition, field, values: [], term: '', scopes: [] }
+          : condition
+      )),
+    );
+
+  const removeCondition = (id: string) => {
+    const next = conditions.filter((condition) => condition.id !== id);
+    onChange(next.length > 0 ? next : [createEmptyFilterCondition()]);
+  };
+
+  const remainingFields = availableFieldOptions.filter(
+    (option) => isReusableField(option.value) || !usedFields.includes(option.value),
+  );
+
+  return (
+    <div className="space-y-3">
+      {requiredConditions.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/50 p-3 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Required Filters</span>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-blue-600 dark:text-blue-400">Always shown</span>
+          </div>
+
+          {requiredConditions.map((condition) => (
+            <div key={condition.id} className="flex items-center gap-1.5 flex-wrap">
+              <div className={`${SEL_CLS} min-w-[140px] bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300`}>
+                {fieldLabel(condition.field)}
+              </div>
+
+              <ConditionValueInput
+                condition={condition}
+                serverOptions={serverOptions}
+                statusCodeOptions={statusCodeOptions}
+                userOptions={userOptions}
+                onChange={(patch) => updateRequiredCondition(condition.id, patch)}
               />
-              {cond.term && (
-                <button
-                  onClick={() => updateCond(cond.id, { term: '' })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
+          ))}
+        </div>
+      )}
 
-            <ScopeSelect scopes={cond.scopes} onChange={scopes => updateCond(cond.id, { scopes })} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Additional Conditions</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">
+          Structured fields are unique. Text can be added multiple times.
+        </span>
+      </div>
 
-            {conditions.length > 1 && (
+      {conditions.map((condition, idx) => {
+        const rowFieldOptions = availableFieldOptions.filter(
+          (option) => option.value === condition.field || isReusableField(option.value) || !usedFields.includes(option.value),
+        );
+
+        return (
+          <div key={condition.id}>
+            {idx > 0 && (
+              <div className="flex items-center py-0.5 pl-1">
+                <button
+                  type="button"
+                  onClick={() => updateCondition(condition.id, { logic: condition.logic === 'and' ? 'or' : 'and' })}
+                  className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none"
+                  title="Toggle AND / OR for this condition"
+                >
+                  {condition.logic.toUpperCase()}
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <FilterFieldSelect
+                value={condition.field}
+                options={rowFieldOptions}
+                onChange={(field) => changeField(condition.id, field)}
+              />
+
+              <ConditionValueInput
+                condition={condition}
+                serverOptions={serverOptions}
+                statusCodeOptions={statusCodeOptions}
+                userOptions={userOptions}
+                onChange={(patch) => updateCondition(condition.id, patch)}
+              />
+
               <button
                 type="button"
-                onClick={() => removeCond(cond.id)}
-                title="Remove condition"
+                onClick={() => removeCondition(condition.id)}
+                title={`Remove ${fieldLabel(condition.field)}`}
                 className="p-1.5 rounded text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-            )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
-      <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+      {remainingFields.length > 0 && (
         <button
           type="button"
-          onClick={addCond}
+          onClick={() => onChange([...conditions, createEmptyFilterCondition()])}
           className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
         >
           <Plus className="h-3 w-3" /> Add condition
         </button>
-
-        {hasAnyTerm && (
-          <div className="flex items-center rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-xs ml-2">
-            <button
-              onClick={() => onModeChange('highlight')}
-              className={`px-3 py-1.5 transition-colors ${mode === 'highlight' ? 'bg-yellow-100 dark:bg-yellow-800/50 text-yellow-800 dark:text-yellow-300 font-medium' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-            >
-              Highlight
-            </button>
-            <button
-              onClick={() => onModeChange('filter')}
-              className={`px-3 py-1.5 border-l border-gray-300 dark:border-gray-600 transition-colors ${mode === 'filter' ? 'bg-blue-100 dark:bg-blue-800/50 text-blue-800 dark:text-blue-300 font-medium' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-            >
-              Filter out
-            </button>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

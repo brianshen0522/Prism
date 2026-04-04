@@ -6,6 +6,14 @@ import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
 
 type SearchCond = { term: string; scopes: string[] };
+type FilterField = 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
+type FilterCond = {
+  field: FilterField;
+  logic?: 'and' | 'or';
+  values?: string[];
+  term?: string;
+  scopes?: string[];
+};
 
 const SCOPE_COL: Record<string, string> = {
   url:         'req_url',
@@ -49,10 +57,133 @@ function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string) {
   };
 }
 
+function parseSearchConditions(sq?: string, search?: string): SearchCond[] {
+  if (sq?.trim()) {
+    try {
+      const parsed = JSON.parse(sq);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (c: unknown): c is SearchCond =>
+            typeof c === 'object' && c !== null &&
+            typeof (c as SearchCond).term === 'string' &&
+            (c as SearchCond).term.trim().length > 0,
+        );
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  if (search?.trim()) return [{ term: search.trim(), scopes: [] }];
+  return [];
+}
+
+function parseFilterConditions(filters?: string): FilterCond[] {
+  if (!filters?.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(filters);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (filter: unknown): filter is FilterCond =>
+        typeof filter === 'object' &&
+        filter !== null &&
+        typeof (filter as FilterCond).field === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function joinWhereClauses(clauses: { logic: 'and' | 'or'; clause: Prisma.ConnectionWhereInput }[]): Prisma.ConnectionWhereInput {
+  if (clauses.length === 0) return {};
+  let current = clauses[0].clause;
+
+  for (let i = 1; i < clauses.length; i += 1) {
+    const { logic, clause } = clauses[i];
+    current = logic === 'or'
+      ? { OR: [current, clause] }
+      : { AND: [current, clause] };
+  }
+
+  return current;
+}
+
+async function resolveTextSearchIds(searchConditions: SearchCond[], logic: 'and' | 'or') {
+  if (searchConditions.length === 0) return undefined;
+
+  const condSets = await Promise.all(
+    searchConditions.map(async (cond) => {
+      const term = `%${cond.term.trim()}%`;
+      const validScopes = (Array.isArray(cond.scopes) ? cond.scopes as string[] : [])
+        .filter((scope) => ALL_SCOPE_KEYS.includes(scope));
+      const effectiveScopes = validScopes.length > 0 ? validScopes : ALL_SCOPE_KEYS;
+      const clauses = effectiveScopes.map((scope) => `${SCOPE_COL[scope]} ILIKE $1`).join(' OR ');
+      const rows = await prism.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM connections WHERE ${clauses}`,
+        term,
+      );
+      return rows.map((row) => row.id);
+    }),
+  );
+
+  if (logic === 'or') return Array.from(new Set(condSets.flat()));
+  if (condSets.length === 1) return condSets[0];
+
+  const sets = condSets.map((ids) => new Set(ids));
+  return [...sets[0]].filter((id) => sets.slice(1).every((set) => set.has(id)));
+}
+
 export async function connectionRoutes(fastify: FastifyInstance) {
+  fastify.get('/connections/filter-options', { preHandler: authenticateHook }, async (req, reply) => {
+    const { scope } = req.query as Record<string, string>;
+    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor';
+
+    const where: Prisma.ConnectionWhereInput =
+      !isPrivileged && scope !== 'all'
+        ? { userId: req.user.sub }
+        : {};
+
+    const rows = await prism.connection.findMany({
+      where: {
+        AND: [
+          where,
+          { resStatusCode: { not: null } },
+        ],
+      },
+      select: { resStatusCode: true },
+      distinct: ['resStatusCode'],
+      orderBy: { resStatusCode: 'asc' },
+    });
+
+    reply.send({
+      status_codes: rows
+        .map((row) => row.resStatusCode)
+        .filter((code): code is number => code !== null),
+    });
+  });
+
   // GET /api/connections
   fastify.get('/connections', { preHandler: authenticateHook }, async (req, reply) => {
-    const { page = '1', limit = '25', server_id, status, method, user_id, from, to, sq, sq_logic, search, scope, sort = 'req_timestamp', order = 'desc' } = req.query as Record<string, string>;
+    const {
+      page = '1',
+      limit = '25',
+      server_id,
+      status,
+      method,
+      user_id,
+      from,
+      to,
+      filters,
+      filter_logic,
+      sq,
+      sq_logic,
+      search,
+      scope,
+      sort = 'req_timestamp',
+      order = 'desc',
+    } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page, 10));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
@@ -60,86 +191,123 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor';
 
-    // Multi-value filters — comma-separated, e.g. ?method=GET,POST
-    const serverIds = server_id ? server_id.split(',').filter(Boolean) : [];
-    const statuses  = status    ? status.split(',').filter(Boolean)    : [];
-    const methods   = method    ? method.split(',').map(m => m.toUpperCase()).filter(Boolean) : [];
+    const baseAnd: Prisma.ConnectionWhereInput[] = [];
+    if (!isPrivileged && scope !== 'all') baseAnd.push({ userId: req.user.sub });
 
-    const AND: Prisma.ConnectionWhereInput[] = [];
+    const parsedFilters = parseFilterConditions(filters);
+    let filterClauses: { logic: 'and' | 'or'; clause: Prisma.ConnectionWhereInput }[] = [];
 
-    // Non-privileged: restrict to own traffic unless scope=all is explicitly requested
-    if (!isPrivileged && scope !== 'all') AND.push({ userId: req.user.sub });
-    // Non-privileged cannot filter by arbitrary user_id even in scope=all
-    if (isPrivileged && user_id) AND.push({ userId: parseInt(user_id, 10) });
+    if (parsedFilters.length > 0) {
+      const textFilters = parsedFilters.filter((filter) => filter.field === 'text');
 
-    if (serverIds.length === 1) AND.push({ serverId: serverIds[0] });
-    else if (serverIds.length > 1) AND.push({ serverId: { in: serverIds } });
-
-    if (statuses.length === 1) AND.push({ status: statuses[0] as Prisma.EnumConnectionStatusFilter });
-    else if (statuses.length > 1) AND.push({ status: { in: statuses as any } });
-
-    if (methods.length === 1) AND.push({ reqMethod: methods[0] });
-    else if (methods.length > 1) AND.push({ reqMethod: { in: methods } });
-
-    if (from || to) {
-      const range: Prisma.DateTimeFilter = {};
-      if (from) range.gte = new Date(from);
-      if (to)   range.lte = new Date(to);
-      AND.push({ reqTimestamp: range });
-    }
-
-    // Multi-condition search: parse `sq` (JSON array) or fall back to legacy `search`
-    let searchConditions: SearchCond[] = [];
-    if (sq?.trim()) {
-      try {
-        const parsed = JSON.parse(sq);
-        if (Array.isArray(parsed)) {
-          searchConditions = parsed.filter(
-            (c: unknown): c is SearchCond =>
-              typeof c === 'object' && c !== null &&
-              typeof (c as SearchCond).term === 'string' &&
-              (c as SearchCond).term.trim().length > 0,
-          );
-        }
-      } catch { /* ignore parse errors */ }
-    } else if (search?.trim()) {
-      searchConditions = [{ term: search.trim(), scopes: [] }];
-    }
-
-    const sqLogicVal = sq_logic === 'or' ? 'or' : 'and';
-
-    if (searchConditions.length > 0) {
-      const condSets = await Promise.all(
-        searchConditions.map(async (cond) => {
-          const term = `%${cond.term.trim()}%`;
-          const validScopes = (Array.isArray(cond.scopes) ? cond.scopes as string[] : [])
-            .filter(s => ALL_SCOPE_KEYS.includes(s));
-          const effectiveScopes = validScopes.length > 0 ? validScopes : ALL_SCOPE_KEYS;
-          // Column names come from hardcoded SCOPE_COL — only user value ($1) is parameterised
-          const clauses = effectiveScopes.map(s => `${SCOPE_COL[s]} ILIKE $1`).join(' OR ');
-          const rows = await prism.$queryRawUnsafe<{ id: string }[]>(
-            `SELECT id FROM connections WHERE ${clauses}`,
-            term,
-          );
-          return rows.map((r: { id: string }) => r.id);
-        }),
+      const textIds = await resolveTextSearchIds(
+        textFilters
+          .filter((filter) => typeof filter.term === 'string' && filter.term.trim().length > 0)
+          .map((filter) => ({ term: filter.term!.trim(), scopes: Array.isArray(filter.scopes) ? filter.scopes : [] })),
+        filter_logic === 'or' ? 'or' : 'and',
       );
 
-      if (sqLogicVal === 'or') {
-        const union = new Set(condSets.flat());
-        AND.push({ id: { in: [...union] } });
-      } else {
-        if (condSets.length === 1) {
-          AND.push({ id: { in: condSets[0] } });
-        } else {
-          const sets = condSets.map(s => new Set(s));
-          const intersection = [...sets[0]].filter(id => sets.slice(1).every(s => s.has(id)));
-          AND.push({ id: { in: intersection } });
+      filterClauses = parsedFilters.reduce<{ logic: 'and' | 'or'; clause: Prisma.ConnectionWhereInput }[]>((clauses, filter, index) => {
+        const logic = index === 0 ? 'and' : (filter.logic === 'or' ? 'or' : 'and');
+
+        if (filter.field === 'server_id') {
+          const values = Array.isArray(filter.values) ? filter.values.filter(Boolean) : [];
+          if (values.length > 0) clauses.push({ logic, clause: { serverId: values.length === 1 ? values[0] : { in: values } } });
+          return clauses;
         }
+
+        if (filter.field === 'method') {
+          const values = Array.isArray(filter.values)
+            ? filter.values.map((value) => value.toUpperCase()).filter(Boolean)
+            : [];
+          if (values.length > 0) clauses.push({ logic, clause: { reqMethod: values.length === 1 ? values[0] : { in: values } } });
+          return clauses;
+        }
+
+        if (filter.field === 'status') {
+          const values = Array.isArray(filter.values) ? filter.values.filter(Boolean) : [];
+          if (values.length > 0) {
+            clauses.push({
+              logic,
+              clause: { status: values.length === 1 ? values[0] as Prisma.EnumConnectionStatusFilter : { in: values as any } },
+            });
+          }
+          return clauses;
+        }
+
+        if (filter.field === 'res_status_code') {
+          const values = Array.isArray(filter.values)
+            ? filter.values.map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value))
+            : [];
+          if (values.length > 0) {
+            clauses.push({
+              logic,
+              clause: { resStatusCode: values.length === 1 ? values[0] : { in: values } },
+            });
+          }
+          return clauses;
+        }
+
+        if (filter.field === 'user_id') {
+          if (!isPrivileged) return clauses;
+          const values = Array.isArray(filter.values)
+            ? filter.values.map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value))
+            : [];
+          if (values.length > 0) clauses.push({ logic, clause: { userId: values.length === 1 ? values[0] : { in: values } } });
+          return clauses;
+        }
+
+        return clauses;
+      }, []);
+
+      if (textFilters.length > 0 && textIds) {
+        const firstTextIndex = parsedFilters.findIndex((filter) => filter.field === 'text');
+        const logic = firstTextIndex <= 0 ? 'and' : (parsedFilters[firstTextIndex].logic === 'or' ? 'or' : 'and');
+        filterClauses.push({ logic, clause: { id: { in: textIds } } });
       }
+    } else {
+      const serverIds = server_id ? server_id.split(',').filter(Boolean) : [];
+      const statuses  = status    ? status.split(',').filter(Boolean)    : [];
+      const methods   = method    ? method.split(',').map((value) => value.toUpperCase()).filter(Boolean) : [];
+
+      if (isPrivileged && user_id) {
+        const userIds = user_id.split(',').map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value));
+        if (userIds.length === 1) filterClauses.push({ logic: 'and', clause: { userId: userIds[0] } });
+        else if (userIds.length > 1) filterClauses.push({ logic: 'and', clause: { userId: { in: userIds } } });
+      }
+
+      if (serverIds.length === 1) filterClauses.push({ logic: 'and', clause: { serverId: serverIds[0] } });
+      else if (serverIds.length > 1) filterClauses.push({ logic: 'and', clause: { serverId: { in: serverIds } } });
+
+      if (statuses.length === 1) filterClauses.push({ logic: 'and', clause: { status: statuses[0] as Prisma.EnumConnectionStatusFilter } });
+      else if (statuses.length > 1) filterClauses.push({ logic: 'and', clause: { status: { in: statuses as any } } });
+
+      if (methods.length === 1) filterClauses.push({ logic: 'and', clause: { reqMethod: methods[0] } });
+      else if (methods.length > 1) filterClauses.push({ logic: 'and', clause: { reqMethod: { in: methods } } });
+
+      if (from || to) {
+        const range: Prisma.DateTimeFilter = {};
+        if (from) range.gte = new Date(from);
+        if (to) range.lte = new Date(to);
+        filterClauses.push({ logic: 'and', clause: { reqTimestamp: range } });
+      }
+
+      const searchConditions = parseSearchConditions(sq, search);
+      const sqLogicVal = sq_logic === 'or' ? 'or' : 'and';
+      const textIds = await resolveTextSearchIds(searchConditions, sqLogicVal);
+      if (textIds) filterClauses.push({ logic: 'and', clause: { id: { in: textIds } } });
     }
 
-    const where: Prisma.ConnectionWhereInput = AND.length ? { AND } : {};
+    let where: Prisma.ConnectionWhereInput = {};
+    const filterWhere = filterClauses.length > 0 ? joinWhereClauses(filterClauses) : undefined;
+
+    if (baseAnd.length > 0 && filterWhere) {
+      where = { AND: [...baseAnd, filterWhere] };
+    } else if (baseAnd.length > 0) {
+      where = baseAnd.length === 1 ? baseAnd[0] : { AND: baseAnd };
+    } else if (filterWhere) {
+      where = filterWhere;
+    }
 
     const SORT_MAP: Record<string, keyof Prisma.ConnectionOrderByWithRelationInput> = {
       req_timestamp: 'reqTimestamp',

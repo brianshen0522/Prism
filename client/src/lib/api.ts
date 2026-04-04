@@ -160,6 +160,8 @@ export function fetchConnections(params: {
   user_id?: string;
   from?: string;
   to?: string;
+  filters?: string;
+  filter_logic?: 'and' | 'or';
   /** JSON-encoded array of {term, scopes[]} — scopes empty means all fields */
   sq?: string;
   sq_logic?: 'and' | 'or';
@@ -179,6 +181,8 @@ export function fetchConnections(params: {
   if (params.user_id) q.set('user_id', params.user_id);
   if (params.from) q.set('from', params.from);
   if (params.to) q.set('to', params.to);
+  if (params.filters) q.set('filters', params.filters);
+  if (params.filter_logic) q.set('filter_logic', params.filter_logic);
   if (params.sq) q.set('sq', params.sq);
   if (params.sq_logic) q.set('sq_logic', params.sq_logic);
   if (params.scope) q.set('scope', params.scope);
@@ -200,6 +204,17 @@ export interface UserSummary {
 
 export function fetchUsers() {
   return json<UserSummary[]>('/users');
+}
+
+export interface ConnectionFilterOptions {
+  status_codes: number[];
+}
+
+export function fetchConnectionFilterOptions(params?: { scope?: 'mine' | 'all' }) {
+  const q = new URLSearchParams();
+  if (params?.scope) q.set('scope', params.scope);
+  const suffix = q.toString() ? `?${q.toString()}` : '';
+  return json<ConnectionFilterOptions>(`/connections/filter-options${suffix}`);
 }
 
 // ─── Participant Token ────────────────────────────────────────────────────────

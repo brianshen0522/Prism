@@ -5,6 +5,7 @@ import { signAccessToken } from '../lib/jwt';
 
 vi.mock('../db/prism', () => ({
   prism: {
+    $queryRawUnsafe: vi.fn(),
     connection: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -60,10 +61,32 @@ beforeAll(async () => { app = await buildApp(); });
 afterAll(async () => { await app.close(); });
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(prism.$queryRawUnsafe).mockResolvedValue([]);
   vi.mocked(prism.connection.count).mockResolvedValue(1);
   vi.mocked(prism.connection.findMany).mockResolvedValue([MOCK_CONN] as any);
   vi.mocked(prism.connection.findUnique).mockResolvedValue(MOCK_CONN as any);
 });
+
+function findClause(where: any, key: string): any {
+  if (!where || typeof where !== 'object') return undefined;
+  if (key in where) return where[key];
+
+  if (Array.isArray(where.AND)) {
+    for (const item of where.AND) {
+      const found = findClause(item, key);
+      if (found !== undefined) return found;
+    }
+  }
+
+  if (Array.isArray(where.OR)) {
+    for (const item of where.OR) {
+      const found = findClause(item, key);
+      if (found !== undefined) return found;
+    }
+  }
+
+  return undefined;
+}
 
 // ─── GET /api/connections ─────────────────────────────────────────────────────
 
@@ -99,7 +122,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: userToken(10) },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.userId).toBe(10);
+    expect(findClause((callArg as any).where, 'userId')).toBe(10);
   });
 
   it('does not scope query for admin', async () => {
@@ -119,7 +142,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.serverId).toBe('srv-1');
+    expect(findClause((callArg as any).where, 'serverId')).toBe('srv-1');
   });
 
   it('applies method filter (uppercased)', async () => {
@@ -129,7 +152,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.reqMethod).toBe('GET');
+    expect(findClause((callArg as any).where, 'reqMethod')).toBe('GET');
   });
 
   it('applies status filter', async () => {
@@ -139,7 +162,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.status).toBe('error');
+    expect(findClause((callArg as any).where, 'status')).toBe('error');
   });
 
   it('allows admin to filter by user_id', async () => {
@@ -149,7 +172,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.userId).toBe(42);
+    expect(findClause((callArg as any).where, 'userId')).toBe(42);
   });
 
   it('ignores user_id filter for non-privileged users', async () => {
@@ -159,8 +182,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: userToken(10) },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    // user always filtered to their own id, not the supplied user_id
-    expect((callArg as any).where.userId).toBe(10);
+    expect(findClause((callArg as any).where, 'userId')).toBe(10);
   });
 
   it('applies from/to date range', async () => {
@@ -170,8 +192,36 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where.reqTimestamp).toHaveProperty('gte');
-    expect((callArg as any).where.reqTimestamp).toHaveProperty('lte');
+    const range = findClause((callArg as any).where, 'reqTimestamp');
+    expect(range).toHaveProperty('gte');
+    expect(range).toHaveProperty('lte');
+  });
+
+  it('supports unified filters payload and OR logic', async () => {
+    await app.inject({
+      method: 'GET',
+      url: `/api/connections?filters=${encodeURIComponent(JSON.stringify([
+        { field: 'method', values: ['get'] },
+        { field: 'status', values: ['error'], logic: 'or' },
+      ]))}`,
+      headers: { authorization: adminToken() },
+    });
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect((callArg as any).where).toHaveProperty('OR');
+    expect(findClause((callArg as any).where, 'reqMethod')).toBe('GET');
+    expect(findClause((callArg as any).where, 'status')).toBe('error');
+  });
+
+  it('supports response status code filters', async () => {
+    await app.inject({
+      method: 'GET',
+      url: `/api/connections?filters=${encodeURIComponent(JSON.stringify([
+        { field: 'res_status_code', values: ['200'] },
+      ]))}`,
+      headers: { authorization: adminToken() },
+    });
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'resStatusCode')).toBe(200);
   });
 
   it('honours page and limit', async () => {
@@ -184,6 +234,24 @@ describe('GET /api/connections', () => {
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
     expect((callArg as any).skip).toBe(20);
     expect((callArg as any).take).toBe(10);
+  });
+});
+
+describe('GET /api/connections/filter-options', () => {
+  it('returns distinct status codes for authenticated users', async () => {
+    vi.mocked(prism.connection.findMany).mockResolvedValue([
+      { resStatusCode: 200 },
+      { resStatusCode: 404 },
+    ] as any);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/connections/filter-options',
+      headers: { authorization: adminToken() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status_codes: [200, 404] });
   });
 });
 

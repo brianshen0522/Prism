@@ -1,11 +1,13 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ShieldAlert, ShieldCheck, CircleX, CheckCircle2, ArrowRight, CircleDashed } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CircleDashed } from 'lucide-react';
 import { fetchOAuthPipeline } from '../lib/api';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
+import { PageHeader } from '../components/PageLayout';
 import { Skeleton } from '../components/ui/skeleton';
+import { ConnectionInspectPanel } from '../components/ConnectionInspectPanel';
 import { cn, fmtDate, httpStatusColor, methodColor } from '../lib/utils';
 
 function StatusBadge({ ok, trueLabel, falseLabel }: {
@@ -118,17 +120,29 @@ function FlowCard({
   status,
   right,
   children,
+  selected = false,
+  onClick,
 }: {
   title: string;
   subtitle?: string;
   status: UiStatus;
   right?: ReactNode;
   children?: ReactNode;
+  selected?: boolean;
+  onClick?: () => void;
 }) {
   const tone = toneForStatus(status);
 
   return (
-    <div className={cn('rounded-xl border p-3 shadow-sm', tone.card)}>
+    <div
+      className={cn(
+        'rounded-xl border p-3 shadow-sm transition-all duration-200',
+        tone.card,
+        selected && 'ring-2 ring-blue-500 border-blue-300 dark:border-blue-700',
+        onClick && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:scale-[1.01] active:scale-[0.995]',
+      )}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={cn('text-sm font-semibold', tone.text)}>{title}</p>
@@ -176,11 +190,17 @@ function ActorHeader({
   );
 }
 
-function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
+function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection, selectedConnectionId }: {
   summary: Awaited<ReturnType<typeof fetchOAuthPipeline>>['summary'];
   tokenIssue: Awaited<ReturnType<typeof fetchOAuthPipeline>>['token_issue'];
   resourceCalls: Awaited<ReturnType<typeof fetchOAuthPipeline>>['resource_calls'];
+  onInspectConnection: (id: string) => void;
+  selectedConnectionId: string | null;
 }) {
+  const openConnection = (id: string | null | undefined) => {
+    if (id) onInspectConnection(id);
+  };
+
   const tokenIssueStatus: UiStatus = tokenIssue.ui_status;
   const authHeaderStatus = actorSummaryStatus(!!summary.authentication_server, !summary.authentication_server);
   const clientStatus = summary.legal ? 'ok' : summary.complete ? 'error' : 'warning';
@@ -231,11 +251,60 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                 {summarizeTokenIssueProblems(tokenIssue).join(' ')}
               </div>
             )}
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)_64px_minmax(0,1fr)] items-stretch">
+            <div className="space-y-3 md:hidden">
               <FlowCard
                 title="Client Request"
                 subtitle={tokenIssue.req_timestamp ? fmtDate(tokenIssue.req_timestamp) : 'No request recorded'}
                 status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'}
+                selected={selectedConnectionId === tokenIssue.connection_id}
+                onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                right={(
+                  !tokenIssue.connection_id
+                    ? <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">No request</Badge>
+                    : <StatusBadge ok={tokenIssue.participant_token_present} trueLabel="Participant token" falseLabel="Missing token" />
+                )}
+              >
+                <p className="text-xs text-gray-600 dark:text-gray-300">
+                  {tokenIssue.is_refresh_grant
+                    ? 'Client exchanges a refresh token for a new access token.'
+                    : 'Client requests a token from the authentication server.'}
+                </p>
+              </FlowCard>
+              <div className="ml-4 h-5 w-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+              <FlowCard
+                title="Token Issue"
+                subtitle="Authentication server response"
+                status={tokenIssueStatus}
+                selected={selectedConnectionId === tokenIssue.connection_id}
+                onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                right={(
+                  <Badge className={tokenIssue.status_code ? httpStatusColor(tokenIssue.status_code) : toneForStatus(tokenIssueStatus).badge}>
+                    {tokenIssue.status_code ?? '—'}
+                  </Badge>
+                )}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  {tokenIssue.connection_id ? (
+                    <>
+                      <StatusBadge ok={tokenIssue.access_token_extracted} trueLabel="Access token extracted" falseLabel="Response missing access_token" />
+                      {tokenIssue.is_refresh_grant && (
+                        <StatusBadge ok={tokenIssue.refresh_token_rotated} trueLabel="Refresh token rotated" falseLabel="Refresh token not rotated" />
+                      )}
+                    </>
+                  ) : (
+                    <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">Token response unavailable</Badge>
+                  )}
+                </div>
+              </FlowCard>
+            </div>
+
+            <div className="hidden md:grid gap-3 md:grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)_64px_minmax(0,1fr)] items-stretch">
+              <FlowCard
+                title="Client Request"
+                subtitle={tokenIssue.req_timestamp ? fmtDate(tokenIssue.req_timestamp) : 'No request recorded'}
+                status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'}
+                selected={selectedConnectionId === tokenIssue.connection_id}
+                onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
                 right={(
                   !tokenIssue.connection_id
                     ? <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">No request</Badge>
@@ -268,12 +337,15 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                     )}
                   </div>
                 )}
+                {tokenIssue.connection_id && <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>}
               </FlowCard>
               <FlowConnector status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'} />
               <FlowCard
                 title="Token Issue"
                 subtitle="Authentication server response"
                 status={tokenIssueStatus}
+                selected={selectedConnectionId === tokenIssue.connection_id}
+                onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
                 right={(
                   <Badge className={tokenIssue.status_code ? httpStatusColor(tokenIssue.status_code) : toneForStatus(tokenIssueStatus).badge}>
                     {tokenIssue.status_code ?? '—'}
@@ -296,6 +368,7 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                     <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">Token response unavailable</Badge>
                   )}
                 </div>
+                {tokenIssue.connection_id && <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>}
               </FlowCard>
               <FlowConnector status="missing" dashed />
               <div className="hidden md:block rounded-xl border border-dashed border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20" />
@@ -336,11 +409,13 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                     </div>
                   )}
 
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)_64px_minmax(0,1fr)] items-stretch">
+                  <div className="space-y-3 md:hidden">
                     <FlowCard
                       title="Client Resource Request"
                       subtitle={fmtDate(call.req_timestamp)}
                       status={call.participant_token_present ? resourceStatus : 'error'}
+                      selected={selectedConnectionId === call.resource_connection_id}
+                      onClick={() => openConnection(call.resource_connection_id)}
                       right={<Badge className={methodColor(call.method)}>{call.method}</Badge>}
                     >
                       <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
@@ -355,11 +430,84 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                         )}
                       </div>
                     </FlowCard>
+                    <div className="ml-4 h-5 w-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+                    <FlowCard
+                      title={call.resource_server.name}
+                      subtitle="Resource server response"
+                      status={resourceStatus}
+                      selected={selectedConnectionId === call.resource_connection_id}
+                      onClick={() => openConnection(call.resource_connection_id)}
+                      right={(
+                        <Badge className={call.status_code ? httpStatusColor(call.status_code) : toneForStatus(resourceStatus).badge}>
+                          {call.status_code ?? '—'}
+                        </Badge>
+                      )}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <StatusBadge ok={call.success} trueLabel="Call succeeded" falseLabel="Call failed" />
+                      </div>
+                    </FlowCard>
+                    <div className="ml-4 h-5 w-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+                    {call.validation ? (
+                      <FlowCard
+                        title="Token Validation"
+                        subtitle={call.validation.authentication_server?.name ?? summary.authentication_server?.name ?? 'Authentication server'}
+                        status={validationStatus}
+                        selected={selectedConnectionId === call.validation.connection_id}
+                        onClick={() => openConnection(call.validation?.connection_id)}
+                        right={(
+                          <Badge className={call.validation.status_code ? httpStatusColor(call.validation.status_code) : toneForStatus(validationStatus).badge}>
+                            {call.validation.status_code ?? '—'}
+                          </Badge>
+                        )}
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <StatusBadge ok={call.validation.body_check_passed} trueLabel="Body check passed" falseLabel="Body check failed" />
+                        </div>
+                      </FlowCard>
+                    ) : (
+                      <FlowCard
+                        title="Validation Missing"
+                        subtitle="Expected resource server verification request"
+                        status="missing"
+                        right={<CircleDashed className="h-4 w-4 text-gray-400" />}
+                      >
+                        <p className="text-xs text-gray-600 dark:text-gray-300">
+                          No validation request was matched to this resource call.
+                        </p>
+                      </FlowCard>
+                    )}
+                  </div>
+
+                  <div className="hidden md:grid gap-3 md:grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)_64px_minmax(0,1fr)] items-stretch">
+                    <FlowCard
+                      title="Client Resource Request"
+                      subtitle={fmtDate(call.req_timestamp)}
+                      status={call.participant_token_present ? resourceStatus : 'error'}
+                      selected={selectedConnectionId === call.resource_connection_id}
+                      onClick={() => openConnection(call.resource_connection_id)}
+                      right={<Badge className={methodColor(call.method)}>{call.method}</Badge>}
+                    >
+                      <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <StatusBadge ok={call.participant_token_present} trueLabel="Participant token" falseLabel="Missing token" />
+                        {call.participant_token_present && (
+                          <StatusBadge
+                            ok={call.participant_token_linked}
+                            trueLabel="Participant linked"
+                            falseLabel="Token expired or unlinked"
+                          />
+                        )}
+                      </div>
+                      <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>
+                    </FlowCard>
                     <FlowConnector status={call.participant_token_present ? resourceStatus : 'error'} />
                     <FlowCard
                       title={call.resource_server.name}
                       subtitle="Resource server response"
                       status={resourceStatus}
+                      selected={selectedConnectionId === call.resource_connection_id}
+                      onClick={() => openConnection(call.resource_connection_id)}
                       right={(
                         <Badge className={call.status_code ? httpStatusColor(call.status_code) : toneForStatus(resourceStatus).badge}>
                           {call.status_code ?? '—'}
@@ -376,6 +524,8 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                         title="Token Validation"
                         subtitle={call.validation.authentication_server?.name ?? summary.authentication_server?.name ?? 'Authentication server'}
                         status={validationStatus}
+                        selected={selectedConnectionId === call.validation.connection_id}
+                        onClick={() => openConnection(call.validation?.connection_id)}
                         right={(
                           <Badge className={call.validation.status_code ? httpStatusColor(call.validation.status_code) : toneForStatus(validationStatus).badge}>
                             {call.validation.status_code ?? '—'}
@@ -385,6 +535,7 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                         <div className="flex items-center gap-2 flex-wrap">
                           <StatusBadge ok={call.validation.body_check_passed} trueLabel="Body check passed" falseLabel="Body check failed" />
                         </div>
+                        <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>
                       </FlowCard>
                     ) : (
                       <FlowCard
@@ -412,6 +563,7 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
 export function OAuthPipelineDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['oauth-pipeline', id],
     queryFn: () => fetchOAuthPipeline(id),
@@ -456,21 +608,24 @@ export function OAuthPipelineDetailPage() {
         Back to OAuth Pipelines
       </Link>
 
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">OAuth Pipeline</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Started {fmtDate(summary.started_at)} · {summary.participant_user?.name ?? summary.participant_user?.username ?? 'Unknown participant'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <StatusBadge ok={summary.complete} trueLabel="Complete" falseLabel="Incomplete" />
-          <StatusBadge ok={summary.legal} trueLabel="Legal" falseLabel="Illegal" />
-          <StatusBadge ok={summary.success} trueLabel="Success" falseLabel="Failed" />
-        </div>
-      </div>
+      <div className={cn(
+        'mx-auto flex flex-col gap-4 xl:flex-row',
+        selectedConnectionId ? 'w-full items-start' : 'w-full max-w-7xl justify-center',
+      )}>
+        <div className={cn('space-y-4 min-w-0', selectedConnectionId ? 'flex-1' : 'w-full')}>
+          <PageHeader
+            title="OAuth Pipeline"
+            description={`Started ${fmtDate(summary.started_at)} · ${summary.participant_user?.name ?? summary.participant_user?.username ?? 'Unknown participant'}`}
+            actions={(
+              <>
+                <StatusBadge ok={summary.complete} trueLabel="Complete" falseLabel="Incomplete" />
+                <StatusBadge ok={summary.legal} trueLabel="Legal" falseLabel="Illegal" />
+                <StatusBadge ok={summary.success} trueLabel="Success" falseLabel="Failed" />
+              </>
+            )}
+          />
 
-      <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-4">
         <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Participant</p><p className="text-sm font-medium">{summary.participant_user?.name ?? summary.participant_user?.username ?? '—'}</p></CardContent></Card>
         <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Authentication Server</p><p className="text-sm font-medium">{summary.authentication_server?.name ?? '—'}</p></CardContent></Card>
         <Card>
@@ -501,54 +656,54 @@ export function OAuthPipelineDetailPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+          </div>
 
-      <Card>
-        <CardContent className="p-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-gray-400">Pipeline Summary</span>
-          <Badge className={summary.diagnostics.length === 0 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}>
-            {summary.diagnostics_summary}
-          </Badge>
-          {summary.diagnostics.map((diagnostic) => (
-            <Badge key={diagnostic} className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-              {humanizeDiagnostic(diagnostic)}
-            </Badge>
-          ))}
-        </CardContent>
-      </Card>
-
-      {(data.refresh_token_full || data.issued_refresh_token_full || token_issue.is_refresh_grant) && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs uppercase tracking-wide text-gray-400">Refresh Token Flow</span>
-              <Badge className={token_issue.is_refresh_grant ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}>
-                {token_issue.is_refresh_grant ? 'Refresh grant detected' : 'Refresh token present'}
+          <Card>
+            <CardContent className="p-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-gray-400">Pipeline Summary</span>
+              <Badge className={summary.diagnostics.length === 0 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}>
+                {summary.diagnostics_summary}
               </Badge>
-              <StatusBadge ok={token_issue.refresh_token_supplied} trueLabel="Refresh token supplied" falseLabel="Refresh token missing" />
-              <StatusBadge ok={token_issue.refresh_token_rotated} trueLabel="Refresh token rotated" falseLabel="Refresh token not rotated" />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Supplied refresh token</p>
-                <p className="mt-1 break-all rounded-md bg-gray-50 px-2 py-2 font-mono text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
-                  {data.refresh_token_full ?? token_issue.refresh_token_fingerprint ?? '—'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Issued refresh token</p>
-                <p className="mt-1 break-all rounded-md bg-gray-50 px-2 py-2 font-mono text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
-                  {data.issued_refresh_token_full ?? token_issue.issued_refresh_token_fingerprint ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              {summary.diagnostics.map((diagnostic) => (
+                <Badge key={diagnostic} className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                  {humanizeDiagnostic(diagnostic)}
+                </Badge>
+              ))}
+            </CardContent>
+          </Card>
 
-      {(data.refresh_chain.previous_pipeline || data.refresh_chain.next_pipelines.length > 0) && (
-        <Card>
-          <CardContent className="p-4 space-y-4">
+          {(data.refresh_token_full || data.issued_refresh_token_full || token_issue.is_refresh_grant) && (
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs uppercase tracking-wide text-gray-400">Refresh Token Flow</span>
+                  <Badge className={token_issue.is_refresh_grant ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}>
+                    {token_issue.is_refresh_grant ? 'Refresh grant detected' : 'Refresh token present'}
+                  </Badge>
+                  <StatusBadge ok={token_issue.refresh_token_supplied} trueLabel="Refresh token supplied" falseLabel="Refresh token missing" />
+                  <StatusBadge ok={token_issue.refresh_token_rotated} trueLabel="Refresh token rotated" falseLabel="Refresh token not rotated" />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Supplied refresh token</p>
+                    <p className="mt-1 break-all rounded-md bg-gray-50 px-2 py-2 font-mono text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
+                      {data.refresh_token_full ?? token_issue.refresh_token_fingerprint ?? '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Issued refresh token</p>
+                    <p className="mt-1 break-all rounded-md bg-gray-50 px-2 py-2 font-mono text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
+                      {data.issued_refresh_token_full ?? token_issue.issued_refresh_token_fingerprint ?? '—'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(data.refresh_chain.previous_pipeline || data.refresh_chain.next_pipelines.length > 0) && (
+            <Card>
+              <CardContent className="p-4 space-y-4">
             <div>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Refresh Chain</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -612,103 +767,26 @@ export function OAuthPipelineDetailPage() {
                 )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <OAuthFlowMap summary={summary} tokenIssue={token_issue} resourceCalls={resource_calls} />
-
-      <Card>
-        <CardContent className="p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Step Details</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Expanded diagnostic view for each resource request and validation pair.</p>
-          </div>
-          {!resource_calls.length ? (
-            <div className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">No resource calls found for this pipeline</div>
-          ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-              {resource_calls.map((call) => (
-                <div key={call.resource_connection_id} className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={methodColor(call.method)}>{call.method}</Badge>
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{call.resource_server.name}</span>
-                      </div>
-                      <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500">{fmtDate(call.req_timestamp)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={call.status_code ? httpStatusColor(call.status_code) : 'bg-gray-100 text-gray-700'}>
-                        {call.status_code ?? '—'}
-                      </Badge>
-                      {call.success ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <CircleX className="h-4 w-4 text-red-600" />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                      Grant: {token_issue.grant_type ?? 'unknown'}
-                    </Badge>
-                    <StatusBadge ok={call.participant_token_present} trueLabel="Participant token present" falseLabel="Participant token missing" />
-                    <StatusBadge ok={call.success} trueLabel="Resource call succeeded" falseLabel="Resource call failed" />
-                    <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{call.diagnostics}</Badge>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        {call.validation?.success ? (
-                          <ShieldCheck className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <ShieldAlert className="h-4 w-4 text-amber-600" />
-                        )}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Validation</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {call.validation?.authentication_server?.name ?? summary.authentication_server?.name ?? 'Authentication server'}
-                          </p>
-                        </div>
-                      </div>
-                      {call.validation?.status_code != null && (
-                        <Badge className={httpStatusColor(call.validation.status_code)}>
-                          {call.validation.status_code}
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <StatusBadge ok={!!call.validation} trueLabel="Validation found" falseLabel="Validation missing" />
-                      <StatusBadge ok={!!call.validation?.body_check_passed} trueLabel="Body check passed" falseLabel="Body check failed" />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    {token_issue.raw_connection_path && (
-                      <Link to={token_issue.raw_connection_path} className="text-blue-600 hover:text-blue-700">
-                        Open token issue connection
-                      </Link>
-                    )}
-                    <Link to={call.raw_resource_connection_path} className="text-blue-600 hover:text-blue-700">
-                      Open resource connection
-                    </Link>
-                    {call.validation?.raw_validation_connection_path && (
-                      <Link to={call.validation.raw_validation_connection_path} className="text-blue-600 hover:text-blue-700">
-                        Open validation connection
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+
+          <OAuthFlowMap
+            summary={summary}
+            tokenIssue={token_issue}
+            resourceCalls={resource_calls}
+            onInspectConnection={setSelectedConnectionId}
+            selectedConnectionId={selectedConnectionId}
+          />
+
+        </div>
+
+        <ConnectionInspectPanel
+          id={selectedConnectionId}
+          onClose={() => setSelectedConnectionId(null)}
+          description="Click a token issue, resource call, or validation step to inspect its raw request and response."
+        />
+      </div>
     </div>
   );
 }

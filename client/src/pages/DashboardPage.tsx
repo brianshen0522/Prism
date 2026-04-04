@@ -13,7 +13,9 @@ import { fetchConnections } from '../lib/api';
 import { useWebSocket, type WSMessage } from '../lib/ws';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { EmptyState, TableCard, TableScroller } from '../components/PagePrimitives';
 import { Skeleton } from '../components/ui/skeleton';
+import { PageHeader, PageShell } from '../components/PageLayout';
 import { fmtDate, fmtDuration, statusColor, methodColor, httpStatusColor } from '../lib/utils';
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
@@ -79,6 +81,31 @@ function RecentRow({ c }: { c: ConnectionSummary }) {
   );
 }
 
+function RecentMobileCard({ c }: { c: ConnectionSummary }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/connections/${c.id}`)}
+      className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-gray-400 dark:text-gray-500">{fmtDate(c.req_timestamp)}</p>
+          <p className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{c.req_url}</p>
+        </div>
+        <Badge className={methodColor(c.req_method)}>{c.req_method}</Badge>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Badge className={statusColor(c.status)}>{c.status}</Badge>
+        {c.res_status_code ? <Badge className={httpStatusColor(c.res_status_code)}>{c.res_status_code}</Badge> : null}
+        <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{fmtDuration(c.duration_ms)}</Badge>
+      </div>
+      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{c.server_name ?? '—'}</p>
+    </button>
+  );
+}
+
 // ─── DashboardPage ────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
@@ -132,11 +159,14 @@ export function DashboardPage() {
   }));
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Dashboard</h1>
+    <PageShell>
+      <PageHeader
+        title="Dashboard"
+        description="Monitor request volume, error rate, and recent traffic activity across the Prism environment."
+      />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {statsLoading ? (
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)
         ) : (
@@ -212,37 +242,39 @@ export function DashboardPage() {
       </Card>
 
       {/* Recent connections */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent connections</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
+      <TableCard title="Recent connections">
+        <TableScroller>
           {recentLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
             </div>
           ) : !recent?.data.length ? (
-            <div className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No connections yet</div>
+            <EmptyState title="No connections yet" className="py-10" />
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  <th className="px-4 py-3 font-medium">Time</th>
-                  <th className="px-4 py-3 font-medium">Method</th>
-                  <th className="px-4 py-3 font-medium">URL</th>
-                  <th className="px-4 py-3 font-medium">Server</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">HTTP</th>
-                  <th className="px-4 py-3 font-medium text-right">Duration</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                {recent.data.map((c) => <RecentRow key={c.id} c={c} />)}
-              </tbody>
-            </table>
+            <>
+              <div className="space-y-3 p-4 md:hidden">
+                {recent.data.map((c) => <RecentMobileCard key={c.id} c={c} />)}
+              </div>
+              <table className="hidden w-full text-sm md:table">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    <th className="px-4 py-3 font-medium">Time</th>
+                    <th className="px-4 py-3 font-medium">Method</th>
+                    <th className="px-4 py-3 font-medium">URL</th>
+                    <th className="px-4 py-3 font-medium">Server</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">HTTP</th>
+                    <th className="px-4 py-3 font-medium text-right">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {recent.data.map((c) => <RecentRow key={c.id} c={c} />)}
+                </tbody>
+              </table>
+            </>
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </TableScroller>
+      </TableCard>
+    </PageShell>
   );
 }

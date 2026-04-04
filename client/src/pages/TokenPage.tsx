@@ -5,6 +5,7 @@ import { fetchParticipantToken, regenParticipantToken } from '../lib/api';
 import { copyToClipboard } from '../lib/utils';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { PageHeader, PageShell } from '../components/PageLayout';
 import { Skeleton } from '../components/ui/skeleton';
 
 function CopyButton({ value }: { value: string }) {
@@ -77,18 +78,20 @@ export function TokenPage() {
   const handleExpired = () => refetch();
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Participant Token</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+    <PageShell width="narrow" className="max-w-2xl">
+      <PageHeader
+        title="Participant Token"
+        description={(
+          <>
           Include this token in every request so your traffic is correctly attributed.
           The token rotates automatically — copy it fresh before each test session.
-        </p>
-      </div>
+          </>
+        )}
+      />
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-blue-500" />
               Your current token
@@ -117,7 +120,7 @@ export function TokenPage() {
           ) : data ? (
             <>
               {/* Token value */}
-              <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3">
+              <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center">
                 <code className="flex-1 font-mono text-sm text-gray-900 dark:text-gray-100 break-all select-all">
                   {data.token}
                 </code>
@@ -132,7 +135,7 @@ export function TokenPage() {
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">
                   Required request header
                 </p>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <code className="font-mono text-sm text-blue-900 dark:text-blue-200 break-all min-w-0 flex-1">
                     {data.header_name}: {data.token}
                   </code>
@@ -163,6 +166,6 @@ export function TokenPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   );
 }

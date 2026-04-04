@@ -1,9 +1,9 @@
 import { useState, useContext, createContext, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Search, Server, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Search, Server, X } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor } from '../lib/utils';
+import { copyToClipboard, fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor } from '../lib/utils';
 import type { ConnectionDetail } from '../lib/api';
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
@@ -25,9 +25,36 @@ function HeadersTable({ headers }: { headers: Record<string, string | string[]> 
   );
 }
 
+function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await copyToClipboard(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+      title={label}
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? 'Copied' : label}
+    </button>
+  );
+}
+
 export function CollapsibleHeaders({ headers }: { headers: Record<string, string | string[]> | null }) {
   const [open, setOpen] = useState(false);
   const count = headers ? Object.keys(headers).length : 0;
+  const headersJson = headers ? JSON.stringify(headers, null, 2) : '{}';
   return (
     <div>
       <button type="button" onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 w-full text-left group">
@@ -35,7 +62,14 @@ export function CollapsibleHeaders({ headers }: { headers: Record<string, string
         <span className="text-xs text-gray-400 dark:text-gray-500">({count})</span>
         <ChevronDown className={`h-3.5 w-3.5 text-gray-400 dark:text-gray-500 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div className="mt-2"><HeadersTable headers={headers} /></div>}
+      {open && (
+        <div className="mt-2 space-y-2">
+          <div className="flex justify-end">
+            <CopyButton value={headersJson} label="Copy JSON" />
+          </div>
+          <HeadersTable headers={headers} />
+        </div>
+      )}
     </div>
   );
 }
@@ -201,8 +235,8 @@ function JsonTree({ body }: { body: string }) {
   return (
     <JsonTreeCtx.Provider value={{ sig, expand, term }}>
       <div className="rounded border border-gray-200 dark:border-gray-700 overflow-hidden text-xs font-mono">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5">
+        <div className="flex flex-col gap-2 px-3 py-1.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 sm:flex-row sm:items-center sm:gap-1.5">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 sm:py-0.5">
             <Search className="h-3 w-3 text-gray-400 dark:text-gray-500 shrink-0" />
             <input
               type="text"
@@ -219,7 +253,7 @@ function JsonTree({ body }: { body: string }) {
             )}
           </div>
           {term && (
-            <>
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap shrink-0 tabular-nums min-w-[3rem] text-center">
                 {matchCount === 0 ? 'No results' : `${activeMatchIdx + 1} / ${matchCount}`}
               </span>
@@ -237,14 +271,17 @@ function JsonTree({ body }: { body: string }) {
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            </>
+            </div>
           )}
-          <button onClick={() => trigger(true)} title="Expand all" className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
-            <ChevronsUpDown className="h-3 w-3" />Expand
-          </button>
-          <button onClick={() => trigger(false)} title="Collapse all" className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
-            <ChevronsDownUp className="h-3 w-3" />Collapse
-          </button>
+          <div className="flex items-center gap-1.5 flex-wrap sm:ml-auto">
+            <button onClick={() => trigger(true)} title="Expand all" className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+              <ChevronsUpDown className="h-3 w-3" />Expand
+            </button>
+            <button onClick={() => trigger(false)} title="Collapse all" className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors">
+              <ChevronsDownUp className="h-3 w-3" />Collapse
+            </button>
+            <CopyButton value={body} label="Copy JSON" />
+          </div>
         </div>
         <div ref={containerRef} className="p-3 overflow-auto max-h-96 bg-gray-50 dark:bg-gray-900">
           <JsonNode value={parsed} isLast propKey={undefined} depth={0} />
@@ -272,7 +309,7 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
           Body was truncated due to the server's storage limit.
         </p>
       )}
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         {(['raw', 'json', 'html'] as ViewMode[]).map((t) => {
           const enabled = tabEnabled[t];
           const active = mode === t;
@@ -289,9 +326,14 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
         })}
       </div>
       {mode === 'raw' && (
-        <pre className="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-700 p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all dark:text-gray-200">
-          {body}
-        </pre>
+        <div className="space-y-2">
+          <div className="flex justify-end">
+            <CopyButton value={body} label="Copy raw" />
+          </div>
+          <pre className="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-700 p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all dark:text-gray-200">
+            {body}
+          </pre>
+        </div>
       )}
       {mode === 'json' && <JsonTree body={body} />}
       {mode === 'html' && (

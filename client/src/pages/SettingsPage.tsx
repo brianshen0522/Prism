@@ -4,7 +4,8 @@ import { Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 import { fetchSettings, upsertSetting, deleteSetting, type Setting } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { PageHeader, PageShell } from '../components/PageLayout';
+import { EmptyState, TableCard } from '../components/PagePrimitives';
 import { Skeleton } from '../components/ui/skeleton';
 import { fmtDate } from '../lib/utils';
 
@@ -141,6 +142,117 @@ function AddSettingRow({ onCancel, initialKey = '' }: { onCancel: () => void; in
   );
 }
 
+function AddSettingMobileCard({ onCancel, initialKey = '' }: { onCancel: () => void; initialKey?: string }) {
+  const qc = useQueryClient();
+  const [key, setKey] = useState(initialKey);
+  const [value, setValue] = useState('');
+
+  const mut = useMutation({
+    mutationFn: () => upsertSetting(key.trim(), value),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); onCancel(); },
+  });
+
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm dark:border-blue-800 dark:bg-blue-950/20">
+      <div className="space-y-3">
+        <Input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="setting_key"
+          autoFocus
+          className="font-mono"
+          list="mobile-setting-suggestions"
+        />
+        <datalist id="mobile-setting-suggestions">
+          {SUGGESTIONS.map((s) => <option key={s.key} value={s.key} />)}
+        </datalist>
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="value"
+          onKeyDown={(e) => { if (e.key === 'Enter' && key.trim()) mut.mutate(); if (e.key === 'Escape') onCancel(); }}
+        />
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" loading={mut.isPending} disabled={!key.trim()} onClick={() => mut.mutate()}>
+            <Check className="h-3.5 w-3.5 text-green-600" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            <X className="h-3.5 w-3.5 text-gray-400" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingMobileCard({ setting }: { setting: Setting }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(setting.value);
+
+  const saveMut = useMutation({
+    mutationFn: () => upsertSetting(setting.key, draft),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setEditing(false); },
+  });
+
+  const delMut = useMutation({
+    mutationFn: () => deleteSetting(setting.key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+  });
+
+  const suggestion = SUGGESTIONS.find((s) => s.key === setting.key);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="space-y-1">
+        <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{setting.key}</p>
+        {suggestion && <p className="text-xs text-gray-400 dark:text-gray-500">{suggestion.hint}</p>}
+      </div>
+
+      <div className="mt-3">
+        {editing ? (
+          <div className="space-y-3">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoFocus
+              className="text-sm"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                <Check className="h-3.5 w-3.5 text-green-600" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(setting.value); }}>
+                <X className="h-3.5 w-3.5 text-gray-400" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="break-all font-mono text-sm text-gray-800 dark:text-gray-200">{setting.value}</p>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-400 dark:text-gray-500">{fmtDate(setting.updated_at)}</p>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)} className="text-gray-400 hover:text-blue-600">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={delMut.isPending}
+            onClick={() => { if (confirm(`Delete setting "${setting.key}"?`)) delMut.mutate(); }}
+            className="text-gray-400 hover:text-red-600"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── SettingsPage ─────────────────────────────────────────────────────────────
 
 export function SettingsPage() {
@@ -152,85 +264,98 @@ export function SettingsPage() {
   });
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Settings</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">System-wide configuration stored in the database.</p>
-        </div>
-        <Button size="sm" onClick={() => setAddingKey('')} disabled={addingKey !== null}>
-          <Plus className="h-4 w-4" />
-          Add setting
-        </Button>
-      </div>
+    <PageShell width="narrow">
+      <PageHeader
+        title="Settings"
+        description="Manage system-wide configuration stored in the database."
+        actions={(
+          <Button size="sm" onClick={() => setAddingKey('')} disabled={addingKey !== null}>
+            <Plus className="h-4 w-4" />
+            Add setting
+          </Button>
+        )}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Configuration</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard title="Configuration">
           {isLoading ? (
             <div className="p-4 space-y-3">
               {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  <th className="px-4 py-3 font-medium w-64">Key</th>
-                  <th className="px-4 py-3 font-medium">Value</th>
-                  <th className="px-4 py-3 font-medium whitespace-nowrap">Last updated</th>
-                  <th className="px-4 py-3 w-20" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                {addingKey !== null && <AddSettingRow initialKey={addingKey} onCancel={() => setAddingKey(null)} />}
+            <>
+              <div className="space-y-3 p-4 md:hidden">
+                {addingKey !== null && <AddSettingMobileCard initialKey={addingKey} onCancel={() => setAddingKey(null)} />}
                 {!settings?.length && addingKey === null ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-gray-400 dark:text-gray-500">
-                      No settings configured yet.
-                    </td>
-                  </tr>
+                  <EmptyState title="No settings configured yet" className="py-12" />
                 ) : (
-                  settings?.map((s) => <SettingRow key={s.key} setting={s} />)
+                  settings?.map((s) => <SettingMobileCard key={s.key} setting={s} />)
                 )}
-              </tbody>
-            </table>
+              </div>
+              <table className="hidden w-full text-sm md:table">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    <th className="px-4 py-3 font-medium w-64">Key</th>
+                    <th className="px-4 py-3 font-medium">Value</th>
+                    <th className="px-4 py-3 font-medium whitespace-nowrap">Last updated</th>
+                    <th className="px-4 py-3 w-20" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {addingKey !== null && <AddSettingRow initialKey={addingKey} onCancel={() => setAddingKey(null)} />}
+                  {!settings?.length && addingKey === null ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-0">
+                        <EmptyState title="No settings configured yet" className="py-12" />
+                      </td>
+                    </tr>
+                  ) : (
+                    settings?.map((s) => <SettingRow key={s.key} setting={s} />)
+                  )}
+                </tbody>
+              </table>
+            </>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Suggested settings helper */}
       {SUGGESTIONS.some((s) => !settings?.some((r) => r.key === s.key)) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Suggested settings</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+        <TableCard title="Suggested settings">
+            <>
+              <div className="space-y-3 p-4 md:hidden">
                 {SUGGESTIONS.filter((s) => !settings?.some((r) => r.key === s.key)).map((s) => (
-                  <tr key={s.key} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3">
-                      <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{s.key}</p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{s.hint}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost" size="sm"
-                        onClick={() => setAddingKey(s.key)}
-                        className="text-blue-600"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add
-                      </Button>
-                    </td>
-                  </tr>
+                  <div key={s.key} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                    <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{s.key}</p>
+                    <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{s.hint}</p>
+                    <Button variant="ghost" size="sm" onClick={() => setAddingKey(s.key)} className="mt-3 text-blue-600">
+                      <Plus className="h-3.5 w-3.5" /> Add
+                    </Button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+              </div>
+              <table className="hidden w-full text-sm md:table">
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {SUGGESTIONS.filter((s) => !settings?.some((r) => r.key === s.key)).map((s) => (
+                    <tr key={s.key} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3">
+                        <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{s.key}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{s.hint}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => setAddingKey(s.key)}
+                          className="text-blue-600"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+        </TableCard>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -114,7 +114,7 @@ export function MultiSelect({
     : options;
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative w-full sm:w-auto">
       <button
         type="button"
         onClick={() => {
@@ -124,7 +124,7 @@ export function MultiSelect({
             return next;
           });
         }}
-        className={`${SEL_CLS} flex items-center gap-1.5 min-w-[120px] cursor-pointer`}
+        className={`${SEL_CLS} flex w-full items-center gap-1.5 sm:min-w-[120px] cursor-pointer`}
       >
         <span className="flex-1 text-left truncate">{label}</span>
         {selected.length > 0 && (
@@ -139,7 +139,7 @@ export function MultiSelect({
         <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg min-w-full">
           {filterable && (
             <div className="p-2 border-b border-gray-100 dark:border-gray-700">
-              <div className="relative min-w-[220px]">
+              <div className="relative w-full min-w-[220px]">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
@@ -551,11 +551,11 @@ function ScopeSelect({ scopes, onChange }: {
     : `${scopes.length} fields`;
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="relative w-full sm:w-auto sm:shrink-0">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`${SEL_CLS} flex items-center gap-1 min-w-[108px] cursor-pointer py-1.5 px-2`}
+        className={`${SEL_CLS} flex w-full items-center gap-1 sm:min-w-[108px] cursor-pointer py-1.5 px-2`}
       >
         <span className="flex-1 text-left truncate text-xs">{label}</span>
         {scopes.length > 0 && (
@@ -622,7 +622,7 @@ function FilterFieldSelect({
     <select
       value={value}
       onChange={(e) => onChange((e.target.value as FilterField | '') || '')}
-      className={`${SEL_CLS} min-w-[140px]`}
+      className={`${SEL_CLS} w-full sm:min-w-[140px]`}
     >
       <option value="">Choose condition</option>
       {options.map((option) => (
@@ -652,7 +652,7 @@ function ConditionValueInput({
       <select
         value={condition.values[0] ?? 'mine'}
         onChange={(e) => onChange({ values: [e.target.value] })}
-        className={`${SEL_CLS} min-w-[140px]`}
+        className={`${SEL_CLS} w-full sm:min-w-[140px]`}
       >
         <option value="mine">Mine</option>
         <option value="all">All</option>
@@ -726,7 +726,7 @@ function ConditionValueInput({
   if (condition.field === 'text') {
     return (
       <>
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative w-full flex-1 min-w-[220px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -751,7 +751,7 @@ function ConditionValueInput({
   }
 
   return (
-    <div className="min-w-[160px] px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded-md">
+    <div className="w-full sm:min-w-[160px] px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded-md">
       Select a field first
     </div>
   );
@@ -826,8 +826,8 @@ export function ConnectionFilterBuilder({
           </div>
 
           {requiredConditions.map((condition) => (
-            <div key={condition.id} className="flex items-center gap-1.5 flex-wrap">
-              <div className={`${SEL_CLS} min-w-[140px] bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300`}>
+            <div key={condition.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
+              <div className={`${SEL_CLS} w-full sm:min-w-[140px] bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300`}>
                 {fieldLabel(condition.field)}
               </div>
 
@@ -870,7 +870,7 @@ export function ConnectionFilterBuilder({
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
               <FilterFieldSelect
                 value={condition.field}
                 options={rowFieldOptions}

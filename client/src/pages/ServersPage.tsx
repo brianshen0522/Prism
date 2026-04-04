@@ -11,7 +11,8 @@ import {
 } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Card, CardContent } from '../components/ui/card';
+import { PageHeader, PageShell } from '../components/PageLayout';
+import { EmptyState, TableCard, TableScroller } from '../components/PagePrimitives';
 import { Badge } from '../components/ui/badge';
 import { Dialog } from '../components/ui/dialog';
 import { Skeleton } from '../components/ui/skeleton';
@@ -107,6 +108,44 @@ function RowActions({
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
+    </div>
+  );
+}
+
+function ServerMobileCard({
+  server,
+  locked,
+  onEdit,
+  onDelete,
+}: {
+  server: AdminServer;
+  locked: boolean;
+  onEdit: (s: AdminServer) => void;
+  onDelete: (s: AdminServer) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{server.name}</p>
+          <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{server.target_url}</p>
+        </div>
+        <StatusCell server={server} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">:{server.proxy_port}</Badge>
+        <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+          {server.body_size_limit_kb ? `${server.body_size_limit_kb} KB` : '∞'}
+        </Badge>
+        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          {server.server_role}
+        </Badge>
+      </div>
+
+      <div className="mt-3">
+        <RowActions server={server} locked={locked} onEdit={onEdit} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
@@ -493,19 +532,14 @@ export function ServersPage() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Servers</h1>
-          {servers && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              {servers.length} server{servers.length !== 1 ? 's' : ''} · {servers.filter((s) => s.is_running).length} running
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
+    <PageShell>
+      <PageHeader
+        title="Servers"
+        description={servers
+          ? `${servers.length} server${servers.length !== 1 ? 's' : ''} · ${servers.filter((s) => s.is_running).length} running`
+          : 'Manage proxy targets, runtime state, and OAuth server classification.'}
+        actions={(
+          <>
           <Button
             variant={locked ? 'primary' : 'secondary'}
             size="sm"
@@ -536,8 +570,9 @@ export function ServersPage() {
             <Plus className="h-4 w-4" />
             Add server
           </Button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {/* Lock banner */}
       {locked && (
@@ -548,55 +583,66 @@ export function ServersPage() {
       )}
 
       {/* Table */}
-      <Card>
-        <CardContent className="p-0 overflow-x-auto">
+      <TableCard>
+        <TableScroller>
           {isLoading ? (
             <div className="p-6 space-y-3">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
             </div>
           ) : !servers?.length ? (
-            <div className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">
-              No servers configured yet. Add one to start proxying.
-            </div>
+            <EmptyState title="No servers configured yet" description="Add a server to start proxying traffic." />
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Target URL</th>
-                  <th className="px-4 py-3 font-medium">Port</th>
-                  <th className="px-4 py-3 font-medium">Limit</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+            <>
+              <div className="space-y-3 p-4 md:hidden">
                 {servers.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{s.name}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400 max-w-[220px] truncate" title={s.target_url}>
-                      {s.target_url}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">:{s.proxy_port}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                      {s.body_size_limit_kb ? `${s.body_size_limit_kb} KB` : '∞'}
-                    </td>
-                    <td className="px-4 py-3"><StatusCell server={s} /></td>
-                    <td className="px-4 py-3">
-                      <RowActions
-                        server={s}
-                        locked={locked}
-                        onEdit={(sv) => { setFormServer(sv); setFormError(''); setShowForm(true); }}
-                        onDelete={handleDelete}
-                      />
-                    </td>
-                  </tr>
+                  <ServerMobileCard
+                    key={s.id}
+                    server={s}
+                    locked={locked}
+                    onEdit={(sv) => { setFormServer(sv); setFormError(''); setShowForm(true); }}
+                    onDelete={handleDelete}
+                  />
                 ))}
-              </tbody>
-            </table>
+              </div>
+              <table className="hidden w-full text-sm md:table">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Target URL</th>
+                    <th className="px-4 py-3 font-medium">Port</th>
+                    <th className="px-4 py-3 font-medium">Limit</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {servers.map((s) => (
+                    <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{s.name}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400 max-w-[220px] truncate" title={s.target_url}>
+                        {s.target_url}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">:{s.proxy_port}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
+                        {s.body_size_limit_kb ? `${s.body_size_limit_kb} KB` : '∞'}
+                      </td>
+                      <td className="px-4 py-3"><StatusCell server={s} /></td>
+                      <td className="px-4 py-3">
+                        <RowActions
+                          server={s}
+                          locked={locked}
+                          onEdit={(sv) => { setFormServer(sv); setFormError(''); setShowForm(true); }}
+                          onDelete={handleDelete}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </TableScroller>
+      </TableCard>
 
       {/* Create / Edit dialog */}
       <Dialog
@@ -617,6 +663,6 @@ export function ServersPage() {
 
       {/* Import dialog */}
       <ImportDialog open={showImport} onClose={() => setShowImport(false)} />
-    </div>
+    </PageShell>
   );
 }

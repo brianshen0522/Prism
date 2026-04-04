@@ -15,10 +15,12 @@ describe('derivePipelineDiagnostics', () => {
       hasTokenIssue: true,
       tokenIssueSuccess: true,
       tokenIssueParticipantTokenPresent: true,
+      tokenIssueParticipantLinked: true,
       tokenIssueAccessTokenExtracted: true,
       resourceCalls: [
         {
           participantTokenPresent: true,
+          participantLinked: true,
           resourceSuccess: true,
           validationMatched: true,
           validationSuccess: true,
@@ -35,10 +37,12 @@ describe('derivePipelineDiagnostics', () => {
       hasTokenIssue: true,
       tokenIssueSuccess: true,
       tokenIssueParticipantTokenPresent: false,
+      tokenIssueParticipantLinked: false,
       tokenIssueAccessTokenExtracted: false,
       resourceCalls: [
         {
           participantTokenPresent: false,
+          participantLinked: false,
           resourceSuccess: false,
           validationMatched: false,
           validationSuccess: null,
@@ -52,6 +56,80 @@ describe('derivePipelineDiagnostics', () => {
     expect(diagnostics).toContain('resource_call_failed');
     expect(diagnostics).toContain('missing_validation');
     expect(summarizeDiagnostics(diagnostics)).toBe('Validation missing');
+  });
+
+  it('marks participant tokens that do not resolve to a user as illegal diagnostics', () => {
+    const diagnostics = derivePipelineDiagnostics({
+      hasTokenIssue: true,
+      tokenIssueSuccess: true,
+      tokenIssueParticipantTokenPresent: true,
+      tokenIssueParticipantLinked: false,
+      tokenIssueAccessTokenExtracted: true,
+      resourceCalls: [
+        {
+          participantTokenPresent: true,
+          participantLinked: false,
+          resourceSuccess: true,
+          validationMatched: true,
+          validationSuccess: true,
+        },
+      ],
+    });
+
+    expect(diagnostics).toContain('unlinked_token_issue_participant');
+    expect(diagnostics).toContain('unlinked_resource_participant');
+    expect(summarizeDiagnostics(diagnostics)).toBe('Participant token expired or no longer linked to a user');
+  });
+
+  it('returns success for pipeline summaries when at least one resource call succeeded', () => {
+    const diagnostics = derivePipelineDiagnostics({
+      hasTokenIssue: true,
+      tokenIssueSuccess: true,
+      tokenIssueParticipantTokenPresent: true,
+      tokenIssueParticipantLinked: true,
+      tokenIssueAccessTokenExtracted: true,
+      resourceCalls: [
+        {
+          participantTokenPresent: true,
+          participantLinked: true,
+          resourceSuccess: false,
+          validationMatched: true,
+          validationSuccess: true,
+        },
+        {
+          participantTokenPresent: true,
+          participantLinked: true,
+          resourceSuccess: true,
+          validationMatched: true,
+          validationSuccess: true,
+        },
+      ],
+    });
+
+    expect(diagnostics).toContain('resource_call_failed');
+    expect(summarizeDiagnostics(diagnostics, { overallSuccess: true })).toBe('Success');
+  });
+
+  it('still records resource failure diagnostics when only failing resource calls exist', () => {
+    const diagnostics = derivePipelineDiagnostics({
+      hasTokenIssue: true,
+      tokenIssueSuccess: true,
+      tokenIssueParticipantTokenPresent: true,
+      tokenIssueParticipantLinked: true,
+      tokenIssueAccessTokenExtracted: true,
+      resourceCalls: [
+        {
+          participantTokenPresent: true,
+          participantLinked: true,
+          resourceSuccess: false,
+          validationMatched: true,
+          validationSuccess: true,
+        },
+      ],
+    });
+
+    expect(diagnostics).toContain('resource_call_failed');
+    expect(summarizeDiagnostics(diagnostics, { overallSuccess: false })).toBe('Resource call failed');
   });
 });
 

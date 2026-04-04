@@ -292,6 +292,7 @@ export interface OAuthResourceCallStep {
   url: string;
   status_code: number | null;
   participant_token_present: boolean;
+  participant_token_linked: boolean;
   success: boolean;
   ui_status: 'ok' | 'warning' | 'error' | 'missing';
   req_timestamp: string;
@@ -334,6 +335,7 @@ export interface OAuthPipelineDetailResponse {
     raw_connection_path: string | null;
     status_code: number | null;
     participant_token_present: boolean;
+    participant_token_linked: boolean;
     grant_type: string | null;
     is_refresh_grant: boolean;
     refresh_token_supplied: boolean;
@@ -467,6 +469,7 @@ export function fetchDashboardStats() {
 
 export interface ChartData {
   hours: number;
+  bucketMinutes: number;
   data: ChartPoint[];
 }
 

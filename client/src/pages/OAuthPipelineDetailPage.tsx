@@ -64,6 +64,9 @@ function summarizeTokenIssueProblems(tokenIssue: Awaited<ReturnType<typeof fetch
   const issues: string[] = [];
   if (!tokenIssue.connection_id) issues.push('No token request was matched.');
   if (tokenIssue.connection_id && !tokenIssue.participant_token_present) issues.push('Client request is missing the participant token.');
+  if (tokenIssue.connection_id && tokenIssue.participant_token_present && !tokenIssue.participant_token_linked) {
+    issues.push('Participant token is expired or no longer linked to the pipeline user.');
+  }
   if (tokenIssue.connection_id && !tokenIssue.access_token_extracted) issues.push('Authentication server response did not expose an access token.');
   if (tokenIssue.connection_id && !tokenIssue.success) issues.push('Token issue did not complete successfully.');
   if (tokenIssue.is_refresh_grant && !tokenIssue.refresh_token_supplied) issues.push('Refresh grant was detected without a refresh token in the request body.');
@@ -82,11 +85,31 @@ function tokenIssueStateLabel(tokenIssue: Awaited<ReturnType<typeof fetchOAuthPi
 function summarizeResourceProblems(call: Awaited<ReturnType<typeof fetchOAuthPipeline>>['resource_calls'][number]) {
   const issues: string[] = [];
   if (!call.participant_token_present) issues.push('Client request is missing the participant token.');
+  if (call.participant_token_present && !call.participant_token_linked) {
+    issues.push('Participant token is expired or no longer linked to the pipeline user.');
+  }
   if (!call.success) issues.push('Resource call returned an unsuccessful status.');
   if (!call.validation) issues.push('Validation request is missing.');
   if (call.validation && !call.validation.body_check_passed) issues.push('Validation body check failed.');
   if (call.validation && !call.validation.success) issues.push('Validation request completed with an error.');
   return issues;
+}
+
+function humanizeDiagnostic(diagnostic: string) {
+  if (diagnostic === 'unlinked_token_issue_participant' || diagnostic === 'unlinked_resource_participant') {
+    return 'Participant token expired or no longer linked to a user';
+  }
+  if (diagnostic === 'missing_token_issue_participant_token' || diagnostic === 'missing_resource_participant_token') {
+    return 'Participant token missing';
+  }
+  if (diagnostic === 'missing_validation') return 'Validation missing';
+  if (diagnostic === 'validation_failed') return 'Validation failed';
+  if (diagnostic === 'resource_call_failed') return 'Resource call failed';
+  if (diagnostic === 'missing_issued_access_token') return 'Access token missing';
+  if (diagnostic === 'token_issue_failed') return 'Token issue failed';
+  if (diagnostic === 'missing_resource_calls') return 'No resource calls';
+  if (diagnostic === 'missing_token_issue') return 'Token request missing';
+  return diagnostic;
 }
 
 function FlowCard({
@@ -236,6 +259,13 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                         falseLabel="Refresh token missing"
                       />
                     )}
+                    {tokenIssue.participant_token_present && (
+                      <StatusBadge
+                        ok={tokenIssue.participant_token_linked}
+                        trueLabel="Participant linked"
+                        falseLabel="Token expired or unlinked"
+                      />
+                    )}
                   </div>
                 )}
               </FlowCard>
@@ -316,6 +346,13 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls }: {
                       <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
                         <StatusBadge ok={call.participant_token_present} trueLabel="Participant token" falseLabel="Missing token" />
+                        {call.participant_token_present && (
+                          <StatusBadge
+                            ok={call.participant_token_linked}
+                            trueLabel="Participant linked"
+                            falseLabel="Token expired or unlinked"
+                          />
+                        )}
                       </div>
                     </FlowCard>
                     <FlowConnector status={call.participant_token_present ? resourceStatus : 'error'} />
@@ -474,7 +511,7 @@ export function OAuthPipelineDetailPage() {
           </Badge>
           {summary.diagnostics.map((diagnostic) => (
             <Badge key={diagnostic} className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-              {diagnostic}
+              {humanizeDiagnostic(diagnostic)}
             </Badge>
           ))}
         </CardContent>

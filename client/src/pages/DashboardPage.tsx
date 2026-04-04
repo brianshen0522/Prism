@@ -120,6 +120,12 @@ export function DashboardPage() {
   const displayChart = liveChart ?? chart;
 
   const chartHours = displayChart?.hours ?? 24;
+  const chartBucketMinutes = displayChart?.bucketMinutes ?? 60;
+  const chartBucketLabel = chartBucketMinutes < 60
+    ? `${chartBucketMinutes}m`
+    : chartBucketMinutes % 60 === 0
+      ? `${chartBucketMinutes / 60}h`
+      : `${chartBucketMinutes}m`;
   const chartData = (displayChart?.data ?? []).map((p) => ({
     ...p,
     label: new Date(p.hour).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
@@ -170,7 +176,7 @@ export function DashboardPage() {
       {/* Traffic chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Requests — last {chartHours} hours</CardTitle>
+          <CardTitle>Requests — last {chartHours}h &nbsp;·&nbsp; {chartBucketLabel} buckets</CardTitle>
         </CardHeader>
         <CardContent>
           {chartLoading ? (

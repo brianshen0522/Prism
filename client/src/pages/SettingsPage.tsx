@@ -17,6 +17,7 @@ const SUGGESTIONS = [
   { key: 'proxy_request_timeout_ms', label: 'Proxy request timeout (ms)', hint: 'Max time to wait for target. Default: 30000.' },
   { key: 'dashboard_requests_window_minutes', label: 'Dashboard requests window (minutes)', hint: 'Time window for the Requests and Error Rate stat cards. Default: 5.' },
   { key: 'dashboard_chart_hours', label: 'Dashboard chart window (hours)', hint: 'How many hours of history the traffic chart covers. Default: 24.' },
+  { key: 'dashboard_chart_bucket_minutes', label: 'Dashboard chart bucket size (minutes)', hint: 'Granularity of each bar in the traffic chart. E.g. 10, 30, 60, 120. Default: 60.' },
   { key: 'connectathon_name', label: 'Connectathon name', hint: 'Displayed in the UI header.' },
 ];
 

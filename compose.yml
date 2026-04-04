@@ -24,7 +24,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${PROXY_DB_USER:-prism} -d ${PROXY_DB_NAME:-prism}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 30
+      start_period: 120s
 
 volumes:
   prism_pgdata:

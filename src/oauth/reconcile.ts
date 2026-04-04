@@ -8,9 +8,11 @@ export type OAuthDiagnosticCode =
   | 'missing_token_issue'
   | 'token_issue_failed'
   | 'missing_token_issue_participant_token'
+  | 'unlinked_token_issue_participant'
   | 'missing_issued_access_token'
   | 'missing_resource_calls'
   | 'missing_resource_participant_token'
+  | 'unlinked_resource_participant'
   | 'resource_call_failed'
   | 'missing_validation'
   | 'validation_failed';
@@ -247,9 +249,11 @@ export function derivePipelineDiagnostics(input: {
   hasTokenIssue: boolean;
   tokenIssueSuccess: boolean;
   tokenIssueParticipantTokenPresent: boolean;
+  tokenIssueParticipantLinked: boolean;
   tokenIssueAccessTokenExtracted: boolean;
   resourceCalls: Array<{
     participantTokenPresent: boolean;
+    participantLinked: boolean;
     resourceSuccess: boolean;
     validationMatched: boolean;
     validationSuccess: boolean | null;
@@ -260,11 +264,13 @@ export function derivePipelineDiagnostics(input: {
   if (!input.hasTokenIssue) diagnostics.add('missing_token_issue');
   if (input.hasTokenIssue && !input.tokenIssueSuccess) diagnostics.add('token_issue_failed');
   if (input.hasTokenIssue && !input.tokenIssueParticipantTokenPresent) diagnostics.add('missing_token_issue_participant_token');
+  if (input.hasTokenIssue && input.tokenIssueParticipantTokenPresent && !input.tokenIssueParticipantLinked) diagnostics.add('unlinked_token_issue_participant');
   if (input.hasTokenIssue && !input.tokenIssueAccessTokenExtracted) diagnostics.add('missing_issued_access_token');
   if (input.resourceCalls.length === 0) diagnostics.add('missing_resource_calls');
 
   for (const call of input.resourceCalls) {
     if (!call.participantTokenPresent) diagnostics.add('missing_resource_participant_token');
+    if (call.participantTokenPresent && !call.participantLinked) diagnostics.add('unlinked_resource_participant');
     if (!call.resourceSuccess) diagnostics.add('resource_call_failed');
     if (!call.validationMatched) diagnostics.add('missing_validation');
     if (call.validationMatched && call.validationSuccess === false) diagnostics.add('validation_failed');
@@ -273,9 +279,16 @@ export function derivePipelineDiagnostics(input: {
   return Array.from(diagnostics);
 }
 
-export function summarizeDiagnostics(diagnostics: OAuthDiagnosticCode[]) {
+export function summarizeDiagnostics(
+  diagnostics: OAuthDiagnosticCode[],
+  options?: { overallSuccess?: boolean },
+) {
+  if (options?.overallSuccess) return 'Success';
   if (diagnostics.includes('missing_validation')) return 'Validation missing';
   if (diagnostics.includes('validation_failed')) return 'Validation failed';
+  if (diagnostics.includes('unlinked_token_issue_participant') || diagnostics.includes('unlinked_resource_participant')) {
+    return 'Participant token expired or no longer linked to a user';
+  }
   if (diagnostics.includes('missing_resource_participant_token')) return 'Participant token missing';
   if (diagnostics.includes('resource_call_failed')) return 'Resource call failed';
   if (diagnostics.includes('missing_issued_access_token')) return 'Access token missing';
@@ -385,20 +398,38 @@ async function recomputePipelineState(pipelineId: string) {
 
   if (!pipeline) return;
 
+  const pipelineParticipantUserId = pipeline.participantUserId ?? pipeline.tokenIssueConnection?.userId ?? null;
+  const tokenIssueParticipantLinked =
+    !!pipeline.tokenIssueConnection?.participantTokenPresent &&
+    typeof pipeline.tokenIssueConnection?.userId === 'number' &&
+    typeof pipelineParticipantUserId === 'number' &&
+    pipeline.tokenIssueConnection.userId === pipelineParticipantUserId;
+
   const tokenIssueSuccess =
     !!pipeline.tokenIssueConnection &&
     responseSucceeded(pipeline.tokenIssueConnection.resStatusCode) &&
     !!pipeline.tokenIssueConnection.issuedAccessTokenHash;
 
+  const hasCompleteResourceFlow = pipeline.resourceCalls.some((call: any) =>
+    !!call.resourceSuccess &&
+    !!call.validationConnectionId &&
+    call.validationSuccess === true,
+  );
+
   const complete =
-    !!pipeline.tokenIssueConnection &&
-    pipeline.resourceCalls.length > 0 &&
-    pipeline.resourceCalls.every((call: any) => !!call.validationConnectionId);
+    tokenIssueSuccess &&
+    hasCompleteResourceFlow;
 
   const legal =
     complete &&
     !!pipeline.tokenIssueConnection?.participantTokenPresent &&
-    pipeline.resourceCalls.every((call: any) => !!call.participantTokenPresent);
+    tokenIssueParticipantLinked &&
+    pipeline.resourceCalls.every((call: any) =>
+      !!call.participantTokenPresent &&
+      typeof call.resourceConnection?.userId === 'number' &&
+      typeof pipelineParticipantUserId === 'number' &&
+      call.resourceConnection.userId === pipelineParticipantUserId,
+    );
 
   const success =
     tokenIssueSuccess &&
@@ -408,9 +439,15 @@ async function recomputePipelineState(pipelineId: string) {
     hasTokenIssue: !!pipeline.tokenIssueConnection,
     tokenIssueSuccess,
     tokenIssueParticipantTokenPresent: !!pipeline.tokenIssueConnection?.participantTokenPresent,
+    tokenIssueParticipantLinked,
     tokenIssueAccessTokenExtracted: !!pipeline.tokenIssueConnection?.issuedAccessTokenHash,
     resourceCalls: pipeline.resourceCalls.map((call: any) => ({
       participantTokenPresent: !!call.participantTokenPresent,
+      participantLinked:
+        !!call.participantTokenPresent &&
+        typeof call.resourceConnection?.userId === 'number' &&
+        typeof pipelineParticipantUserId === 'number' &&
+        call.resourceConnection.userId === pipelineParticipantUserId,
       resourceSuccess: !!call.resourceSuccess,
       validationMatched: !!call.validationConnectionId,
       validationSuccess: call.validationSuccess ?? null,
@@ -779,9 +816,19 @@ export async function buildOAuthPipelineList(filters: {
           responseSucceeded(pipeline.tokenIssueConnection.resStatusCode) &&
           !!pipeline.tokenIssueConnection.issuedAccessTokenHash,
         tokenIssueParticipantTokenPresent: !!pipeline.tokenIssueConnection?.participantTokenPresent,
+        tokenIssueParticipantLinked:
+          !!pipeline.tokenIssueConnection?.participantTokenPresent &&
+          typeof pipeline.tokenIssueConnection?.userId === 'number' &&
+          typeof pipeline.participantUserId === 'number' &&
+          pipeline.tokenIssueConnection.userId === pipeline.participantUserId,
         tokenIssueAccessTokenExtracted: !!pipeline.tokenIssueConnection?.issuedAccessTokenHash,
         resourceCalls: pipeline.resourceCalls.map((call: any) => ({
           participantTokenPresent: !!call.participantTokenPresent,
+          participantLinked:
+            !!call.participantTokenPresent &&
+            typeof call.resourceConnection?.userId === 'number' &&
+            typeof pipeline.participantUserId === 'number' &&
+            call.resourceConnection.userId === pipeline.participantUserId,
           resourceSuccess: !!call.resourceSuccess,
           validationMatched: !!call.validationMatched,
           validationSuccess: call.validationSuccess ?? null,
@@ -809,7 +856,7 @@ export async function buildOAuthPipelineList(filters: {
         has_descendants: descendantCount > 0,
         descendant_count: descendantCount,
         diagnostics,
-        diagnostics_summary: summarizeDiagnostics(diagnostics),
+        diagnostics_summary: summarizeDiagnostics(diagnostics, { overallSuccess: pipeline.success }),
       };
     }),
   };
@@ -876,9 +923,19 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
     hasTokenIssue: !!tokenIssue,
     tokenIssueSuccess: !!tokenIssue && responseSucceeded(tokenIssue.resStatusCode) && !!tokenIssue.issuedAccessTokenHash,
     tokenIssueParticipantTokenPresent: !!tokenIssue?.participantTokenPresent,
+    tokenIssueParticipantLinked:
+      !!tokenIssue?.participantTokenPresent &&
+      typeof tokenIssue?.userId === 'number' &&
+      typeof pipeline.participantUserId === 'number' &&
+      tokenIssue.userId === pipeline.participantUserId,
     tokenIssueAccessTokenExtracted: !!tokenIssue?.issuedAccessTokenHash,
     resourceCalls: pipeline.resourceCalls.map((call: any) => ({
       participantTokenPresent: !!call.participantTokenPresent,
+      participantLinked:
+        !!call.participantTokenPresent &&
+        typeof call.resourceConnection?.userId === 'number' &&
+        typeof pipeline.participantUserId === 'number' &&
+        call.resourceConnection.userId === pipeline.participantUserId,
       resourceSuccess: !!call.resourceSuccess,
       validationMatched: !!call.validationConnectionId,
       validationSuccess: call.validationSuccess ?? null,
@@ -903,13 +960,18 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       validation_call_count: validationCount,
       resource_servers: resourceServers,
       diagnostics,
-      diagnostics_summary: summarizeDiagnostics(diagnostics),
+      diagnostics_summary: summarizeDiagnostics(diagnostics, { overallSuccess: pipeline.success }),
     },
     token_issue: {
       connection_id: tokenIssue?.id ?? null,
       raw_connection_path: tokenIssue ? `/connections/${tokenIssue.id}` : null,
       status_code: tokenIssue?.resStatusCode ?? null,
       participant_token_present: tokenIssue?.participantTokenPresent ?? false,
+      participant_token_linked:
+        !!tokenIssue?.participantTokenPresent &&
+        typeof tokenIssue?.userId === 'number' &&
+        typeof pipeline.participantUserId === 'number' &&
+        tokenIssue.userId === pipeline.participantUserId,
       grant_type: tokenIssueGrantType,
       is_refresh_grant: tokenIssueGrantType === 'refresh_token',
       refresh_token_supplied: !!tokenIssueRefreshToken,
@@ -934,6 +996,11 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       url: call.resourceConnection.reqUrl,
       status_code: call.resourceConnection.resStatusCode ?? null,
       participant_token_present: call.participantTokenPresent,
+      participant_token_linked:
+        !!call.participantTokenPresent &&
+        typeof call.resourceConnection?.userId === 'number' &&
+        typeof pipeline.participantUserId === 'number' &&
+        call.resourceConnection.userId === pipeline.participantUserId,
       success: call.resourceSuccess,
       ui_status: !call.participantTokenPresent
         ? 'error'
@@ -960,9 +1027,15 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
         hasTokenIssue: true,
         tokenIssueSuccess: true,
         tokenIssueParticipantTokenPresent: true,
+        tokenIssueParticipantLinked: true,
         tokenIssueAccessTokenExtracted: true,
         resourceCalls: [{
           participantTokenPresent: call.participantTokenPresent,
+          participantLinked:
+            !!call.participantTokenPresent &&
+            typeof call.resourceConnection?.userId === 'number' &&
+            typeof pipeline.participantUserId === 'number' &&
+            call.resourceConnection.userId === pipeline.participantUserId,
           resourceSuccess: call.resourceSuccess,
           validationMatched: !!call.validationConnectionId,
           validationSuccess: call.validationSuccess ?? null,

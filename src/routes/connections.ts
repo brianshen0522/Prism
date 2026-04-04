@@ -25,7 +25,7 @@ const SCOPE_COL: Record<string, string> = {
 const ALL_SCOPE_KEYS = Object.keys(SCOPE_COL);
 
 const authenticateHook = [authenticate];
-const privileged = [authenticate, requireRole('admin', 'monitor')];
+const privileged = [authenticate, requireRole('admin', 'monitor', 'oauth2')];
 
 function fmtConnection(c: Record<string, unknown>, serverName?: string) {
   return {
@@ -136,9 +136,23 @@ async function resolveTextSearchIds(searchConditions: SearchCond[], logic: 'and'
 }
 
 export async function connectionRoutes(fastify: FastifyInstance) {
+  fastify.post('/admin/connections/clear', { preHandler: [authenticate, requireRole('admin')] }, async (_req, reply) => {
+    const [resourceCalls, pipelines, connections] = await prism.$transaction([
+      (prism as any).oAuthPipelineResourceCall.deleteMany({}),
+      (prism as any).oAuthPipeline.deleteMany({}),
+      prism.connection.deleteMany({}),
+    ]);
+
+    reply.send({
+      deleted_resource_calls: resourceCalls.count,
+      deleted_pipelines: pipelines.count,
+      deleted_connections: connections.count,
+    });
+  });
+
   fastify.get('/connections/filter-options', { preHandler: authenticateHook }, async (req, reply) => {
     const { scope } = req.query as Record<string, string>;
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor';
+    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
 
     const where: Prisma.ConnectionWhereInput =
       !isPrivileged && scope !== 'all'
@@ -189,7 +203,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const skip = (pageNum - 1) * limitNum;
 
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor';
+    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
 
     const baseAnd: Prisma.ConnectionWhereInput[] = [];
     if (!isPrivileged && scope !== 'all') baseAnd.push({ userId: req.user.sub });
@@ -345,7 +359,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     if (!c) return reply.status(404).send({ error: 'Not found' });
 
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor';
+    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
     if (!isPrivileged && c.userId !== req.user.sub) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
@@ -366,6 +380,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       name:     [u.firstname, u.lastname].filter(Boolean).join(' ') || u.username,
       role:     u.roles.some(r => r.roleId === 1) ? 'admin'
               : u.roles.some(r => r.roleId === 2) ? 'monitor'
+              : u.roles.some(r => r.roleId === 3) ? 'oauth2'
               : 'user',
     }));
     reply.send(data);

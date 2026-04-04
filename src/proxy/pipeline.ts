@@ -8,6 +8,8 @@ import { prism } from '../db/prism';
 import { verifyAccessToken } from '../lib/jwt';
 import { wsManager } from '../ws/manager';
 import { DEFAULT_HEADER } from '../routes/token';
+import { classifyOAuthConnection } from '../oauth/extract';
+import { enqueueOAuthReconcile } from '../oauth/reconcile';
 
 // ─── Cached participant-token header name (refreshed every 60 s) ──────────────
 
@@ -19,6 +21,12 @@ async function getParticipantHeader(): Promise<string> {
   const name = (s?.value || DEFAULT_HEADER).toLowerCase();
   _headerCache = { name, at: Date.now() };
   return name;
+}
+
+async function hasParticipantToken(headers: http.IncomingHttpHeaders): Promise<boolean> {
+  const headerName = await getParticipantHeader();
+  const tokenValue = headers[headerName];
+  return typeof tokenValue === 'string' && tokenValue.length > 0;
 }
 
 // ─── Hop-by-hop headers that must not be forwarded ───────────────────────────
@@ -214,6 +222,8 @@ export async function handleRequest(
 
   // Step 2 — Identify user (JWT > X-Proxy-Key > anonymous)
   const { userId, username } = await identifyUser(req.headers);
+  const participantTokenPresent = await hasParticipantToken(req.headers);
+  const sanitizedReqHeaders = sanitizeHeaders(req.headers as Record<string, string | string[]>);
 
   // Step 3 — Apply body size limit for storage (full body is always forwarded)
   const { body: reqBody, truncated: reqBodyTruncated } = applyBodyLimit(
@@ -231,11 +241,12 @@ export async function handleRequest(
       reqTimestamp,
       reqMethod: req.method ?? 'UNKNOWN',
       reqUrl: req.url ?? '/',
-      reqHeaders: sanitizeHeaders(req.headers as Record<string, string | string[]>),
+      reqHeaders: sanitizedReqHeaders,
       reqBody,
       reqBodySize: reqBodyBuffer.length > 0 ? reqBodyBuffer.length : null,
       reqBodyTruncated,
-    },
+      participantTokenPresent,
+    } as any,
   });
 
   wsManager.emitConnectionNew({
@@ -280,6 +291,18 @@ export async function handleRequest(
     server.bodySizeLimitKb,
     proxyRes.headers['content-type'],
   );
+  const oauthMeta = classifyOAuthConnection({
+    server: server as any,
+    participantHeaderName: await getParticipantHeader(),
+    connection: {
+      reqUrl: req.url ?? '/',
+      reqHeaders: sanitizedReqHeaders,
+      reqBody,
+      resBody,
+      resStatusCode: proxyRes.statusCode ?? null,
+      status: 'completed',
+    },
+  });
 
   // Step 8 — Record response → DB (status: completed)
   await prism.connection.update({
@@ -294,8 +317,21 @@ export async function handleRequest(
       resBodySize: resBodyBuffer.length > 0 ? resBodyBuffer.length : null,
       resBodyTruncated,
       durationMs,
-    },
+      participantTokenPresent: oauthMeta.participantTokenPresent,
+      accessTokenHash: oauthMeta.accessTokenHash,
+      accessTokenPreview: oauthMeta.accessTokenPreview,
+      refreshTokenHash: oauthMeta.refreshTokenHash,
+      refreshTokenPreview: oauthMeta.refreshTokenPreview,
+      issuedAccessTokenHash: oauthMeta.issuedAccessTokenHash,
+      issuedAccessTokenPreview: oauthMeta.issuedAccessTokenPreview,
+      issuedRefreshTokenHash: oauthMeta.issuedRefreshTokenHash,
+      issuedRefreshTokenPreview: oauthMeta.issuedRefreshTokenPreview,
+      connectionKind: oauthMeta.connectionKind,
+      oauthCallerType: oauthMeta.oauthCallerType,
+    } as any,
   });
+
+  enqueueOAuthReconcile(connection.id);
 
   wsManager.emitConnectionCompleted({
     id: connection.id,

@@ -19,7 +19,7 @@ export function NavBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const isPrivileged = user?.role === 'admin' || user?.role === 'monitor';
+  const isPrivileged = user?.role === 'admin' || user?.role === 'monitor' || user?.role === 'oauth2';
   const isAdmin = user?.role === 'admin';
 
   const links = [

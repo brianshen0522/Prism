@@ -11,15 +11,15 @@ export interface WSMessage {
 }
 
 // ─── Channel access rules ─────────────────────────────────────────────────────
-// dashboard          → admin | monitor
-// traffic:all        → admin | monitor
-// traffic:user:{id}  → that user OR admin | monitor
-// server:{uuid}      → admin | monitor
+// dashboard          → admin | monitor | oauth2
+// traffic:all        → admin | monitor | oauth2
+// traffic:user:{id}  → that user OR admin | monitor | oauth2
+// server:{uuid}      → admin | monitor | oauth2
 
 export function canSubscribe(user: JwtPayload | null, channel: string): boolean {
   if (!user) return false;
 
-  const isPrivileged = user.role === 'admin' || user.role === 'monitor';
+  const isPrivileged = user.role === 'admin' || user.role === 'monitor' || user.role === 'oauth2';
 
   if (channel === 'dashboard' || channel === 'traffic:all') {
     return isPrivileged;

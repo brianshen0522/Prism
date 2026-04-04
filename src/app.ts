@@ -9,6 +9,7 @@ import { connectionRoutes } from './routes/connections';
 import { tokenRoutes } from './routes/token';
 import { dashboardRoutes } from './routes/dashboard';
 import { settingsRoutes } from './routes/settings';
+import { oauthRoutes } from './routes/oauth';
 import { setupWebSocket } from './ws/setup';
 
 export async function buildApp() {
@@ -31,6 +32,7 @@ export async function buildApp() {
   await app.register(tokenRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
+  await app.register(oauthRoutes, { prefix: '/api' });
 
   // Serve the React frontend (production build)
   await app.register(staticFiles, {

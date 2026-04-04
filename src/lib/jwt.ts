@@ -4,7 +4,7 @@ import { config } from '../config';
 export interface JwtPayload {
   sub: number;
   username: string;
-  role: 'admin' | 'monitor' | 'user';
+  role: 'admin' | 'monitor' | 'oauth2' | 'user';
   iat?: number;
   exp?: number;
 }

@@ -199,7 +199,7 @@ export interface UserSummary {
   id: number;
   username: string;
   name: string;
-  role: 'admin' | 'monitor' | 'user';
+  role: 'admin' | 'monitor' | 'oauth2' | 'user';
 }
 
 export function fetchUsers() {
@@ -215,6 +215,210 @@ export function fetchConnectionFilterOptions(params?: { scope?: 'mine' | 'all' }
   if (params?.scope) q.set('scope', params.scope);
   const suffix = q.toString() ? `?${q.toString()}` : '';
   return json<ConnectionFilterOptions>(`/connections/filter-options${suffix}`);
+}
+
+export function clearAllTraffic() {
+  return json<{
+    deleted_resource_calls: number;
+    deleted_pipelines: number;
+    deleted_connections: number;
+  }>('/admin/connections/clear', {
+    method: 'POST',
+  });
+}
+
+// ─── OAuth Pipelines ──────────────────────────────────────────────────────────
+
+export interface OAuthPipelineListItem {
+  id: string;
+  started_at: string | null;
+  participant_user: {
+    id: number;
+    username: string;
+    name: string;
+  } | null;
+  authentication_server: {
+    id: string;
+    name: string;
+  } | null;
+  resource_servers: Array<{
+    id: string;
+    name: string;
+  }>;
+  access_token_fingerprint: string;
+  resource_call_count: number;
+  complete: boolean;
+  legal: boolean;
+  success: boolean;
+  refreshed_from: {
+    id: string;
+    accessTokenPreview: string;
+  } | null;
+  has_descendants: boolean;
+  descendant_count: number;
+  diagnostics: string[];
+  diagnostics_summary: string;
+}
+
+export interface OAuthPipelineListResponse {
+  data: OAuthPipelineListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface OAuthValidationStep {
+  connection_id: string | null;
+  raw_validation_connection_path?: string;
+  authentication_server: {
+    id: string;
+    name: string;
+  } | null;
+  status_code: number | null;
+  endpoint_matched: boolean;
+  body_check_passed: boolean;
+  success: boolean;
+  ui_status: 'ok' | 'warning' | 'error' | 'missing';
+}
+
+export interface OAuthResourceCallStep {
+  resource_connection_id: string;
+  raw_resource_connection_path: string;
+  resource_server: {
+    id: string;
+    name: string;
+  };
+  method: string;
+  url: string;
+  status_code: number | null;
+  participant_token_present: boolean;
+  success: boolean;
+  ui_status: 'ok' | 'warning' | 'error' | 'missing';
+  req_timestamp: string;
+  validation_expected: boolean;
+  validation: OAuthValidationStep | null;
+  diagnostics: string;
+}
+
+export interface OAuthPipelineDetailResponse {
+  summary: {
+    id: string;
+    started_at: string | null;
+    participant_user: {
+      id: number;
+      username: string;
+      name: string;
+    } | null;
+    authentication_server: {
+      id: string;
+      name: string;
+    } | null;
+    access_token: {
+      fingerprint: string;
+      full?: string;
+    };
+    complete: boolean;
+    legal: boolean;
+    success: boolean;
+    resource_call_count: number;
+    validation_call_count: number;
+    resource_servers: Array<{
+      id: string;
+      name: string;
+    }>;
+    diagnostics: string[];
+    diagnostics_summary: string;
+  };
+  token_issue: {
+    connection_id: string | null;
+    raw_connection_path: string | null;
+    status_code: number | null;
+    participant_token_present: boolean;
+    grant_type: string | null;
+    is_refresh_grant: boolean;
+    refresh_token_supplied: boolean;
+    refresh_token_rotated: boolean;
+    refresh_token_fingerprint: string | null;
+    issued_refresh_token_fingerprint: string | null;
+    endpoint_matched: boolean;
+    access_token_extracted: boolean;
+    success: boolean;
+    ui_status: 'ok' | 'warning' | 'error' | 'missing';
+    req_timestamp: string | null;
+  };
+  resource_calls: OAuthResourceCallStep[];
+  access_token_full?: string | null;
+  refresh_token_full?: string | null;
+  issued_refresh_token_full?: string | null;
+  refresh_chain: {
+    previous_pipeline: {
+      id: string;
+      started_at: string | null;
+      access_token_fingerprint: string;
+      authentication_server: {
+        id: string;
+        name: string;
+      } | null;
+      grant_type: string | null;
+    } | null;
+    next_pipelines: Array<{
+      id: string;
+      started_at: string | null;
+      access_token_fingerprint: string;
+      authentication_server: {
+        id: string;
+        name: string;
+      } | null;
+      grant_type: string | null;
+    }>;
+  };
+}
+
+export interface OAuthFilterOptions {
+  participant_users: Array<{
+    id: number;
+    username: string;
+    name: string;
+  }>;
+  authentication_servers: Array<{
+    id: string;
+    name: string;
+  }>;
+  resource_servers: Array<{
+    id: string;
+    name: string;
+  }>;
+}
+
+export function fetchOAuthPipelines(params: {
+  page?: number;
+  limit?: number;
+  access_token?: string;
+  participant_user_id?: string | string[];
+  legal?: 'all' | 'legal' | 'illegal';
+  success?: 'all' | 'success' | 'failed';
+  authentication_server_id?: string | string[];
+  resource_server_id?: string | string[];
+}) {
+  const q = new URLSearchParams();
+  if (params.page) q.set('page', String(params.page));
+  if (params.limit) q.set('limit', String(params.limit));
+  const asStr = (v: string | string[] | undefined) => Array.isArray(v) ? v.join(',') : (v ?? '');
+  if (params.access_token) q.set('access_token', params.access_token);
+  const pu = asStr(params.participant_user_id); if (pu) q.set('participant_user_id', pu);
+  if (params.legal) q.set('legal', params.legal);
+  if (params.success) q.set('success', params.success);
+  const auth = asStr(params.authentication_server_id); if (auth) q.set('authentication_server_id', auth);
+  const resource = asStr(params.resource_server_id); if (resource) q.set('resource_server_id', resource);
+  return json<OAuthPipelineListResponse>(`/oauth/pipelines?${q}`);
+}
+
+export function fetchOAuthPipeline(id: string) {
+  return json<OAuthPipelineDetailResponse>(`/oauth/pipelines/${id}`);
+}
+
+export function fetchOAuthFilterOptions() {
+  return json<OAuthFilterOptions>('/oauth/filter-options');
 }
 
 // ─── Participant Token ────────────────────────────────────────────────────────
@@ -285,6 +489,12 @@ export interface AdminServer {
   proxy_port: number;
   is_active: boolean;
   body_size_limit_kb: number | null;
+  server_role: 'generic' | 'authentication' | 'resource';
+  oauth_auth_server_id: string | null;
+  oauth_token_endpoint: string | null;
+  oauth_validation_endpoint: string | null;
+  oauth_validation_success_path: string | null;
+  oauth_validation_success_value: string | null;
   created_by: number;
   created_at: string;
   is_running: boolean;
@@ -297,6 +507,12 @@ export interface CreateServerBody {
   ssl_verify?: boolean;
   proxy_port?: number;
   body_size_limit_kb?: number | null;
+  server_role?: 'generic' | 'authentication' | 'resource';
+  oauth_auth_server_id?: string | null;
+  oauth_token_endpoint?: string | null;
+  oauth_validation_endpoint?: string | null;
+  oauth_validation_success_path?: string | null;
+  oauth_validation_success_value?: string | null;
 }
 
 export interface UpdateServerBody {
@@ -306,6 +522,12 @@ export interface UpdateServerBody {
   ssl_verify?: boolean;
   is_active?: boolean;
   body_size_limit_kb?: number | null;
+  server_role?: 'generic' | 'authentication' | 'resource';
+  oauth_auth_server_id?: string | null;
+  oauth_token_endpoint?: string | null;
+  oauth_validation_endpoint?: string | null;
+  oauth_validation_success_path?: string | null;
+  oauth_validation_success_value?: string | null;
 }
 
 export function fetchAdminServers() {

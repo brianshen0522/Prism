@@ -13,7 +13,7 @@ function buildApp() {
   return app;
 }
 
-function tok(role: 'admin' | 'monitor' | 'user') {
+function tok(role: 'admin' | 'monitor' | 'oauth2' | 'user') {
   return `Bearer ${signAccessToken({ sub: 1, username: 'u', role })}`;
 }
 
@@ -46,6 +46,12 @@ describe('requireRole', () => {
     const app = buildApp();
     const res = await app.inject({ method: 'GET', url: '/admin-or-monitor', headers: { authorization: tok('monitor') } });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('returns 403 when oauth2 accesses admin-or-monitor route', async () => {
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/admin-or-monitor', headers: { authorization: tok('oauth2') } });
+    expect(res.statusCode).toBe(403);
   });
 
   it('returns 403 when user accesses admin-or-monitor route', async () => {

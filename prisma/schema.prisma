@@ -13,47 +13,144 @@ enum ConnectionStatus {
   error
 }
 
+enum ServerRole {
+  generic
+  authentication
+  resource
+}
+
+enum ConnectionKind {
+  generic
+  oauth_token_issue
+  resource_access
+  oauth_validation
+}
+
+enum OAuthCallerType {
+  client
+  resource_server
+  unknown
+}
+
 model BackendServer {
-  id              String       @id @default(uuid())
-  name            String
-  targetUrl       String       @map("target_url")
-  isHttps         Boolean      @default(false) @map("is_https")
-  sslVerify       Boolean      @default(true) @map("ssl_verify")
-  proxyPort       Int          @unique @map("proxy_port")
-  isActive        Boolean      @default(true) @map("is_active")
-  bodySizeLimitKb Int?         @map("body_size_limit_kb")
-  createdBy       Int          @map("created_by")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  connections     Connection[]
+  id                          String               @id @default(uuid())
+  name                        String
+  targetUrl                   String               @map("target_url")
+  isHttps                     Boolean              @default(false) @map("is_https")
+  sslVerify                   Boolean              @default(true) @map("ssl_verify")
+  proxyPort                   Int                  @unique @map("proxy_port")
+  isActive                    Boolean              @default(true) @map("is_active")
+  bodySizeLimitKb             Int?                 @map("body_size_limit_kb")
+  createdBy                   Int                  @map("created_by")
+  createdAt                   DateTime             @default(now()) @map("created_at")
+  serverRole                  ServerRole           @default(generic) @map("server_role")
+  oauthAuthServerId           String?              @map("oauth_auth_server_id")
+  oauthTokenEndpoint          String?              @map("oauth_token_endpoint")
+  oauthValidationEndpoint     String?              @map("oauth_validation_endpoint")
+  oauthValidationSuccessPath  String?              @default("active") @map("oauth_validation_success_path")
+  oauthValidationSuccessValue String?              @default("true") @map("oauth_validation_success_value")
+  connections                 Connection[]
+  oauthAuthServer             BackendServer?       @relation("OAuthAuthServer", fields: [oauthAuthServerId], references: [id])
+  oauthResourceServers        BackendServer[]      @relation("OAuthAuthServer")
+  oauthPipelines              OAuthPipeline[]
+  oauthPipelineResourceCalls  OAuthPipelineResourceCall[]
 
   @@map("backend_servers")
 }
 
 model Connection {
-  id               String           @id @default(uuid())
-  userId           Int?             @map("user_id")
-  serverId         String           @map("server_id")
-  status           ConnectionStatus @default(pending)
-  reqId            String           @default(uuid()) @map("req_id")
-  reqTimestamp     DateTime         @map("req_timestamp")
-  reqMethod        String           @map("req_method")
-  reqUrl           String           @map("req_url")
-  reqHeaders       Json             @map("req_headers")
-  reqBody          String?          @map("req_body")
-  reqBodySize      Int?             @map("req_body_size")
-  reqBodyTruncated Boolean          @default(false) @map("req_body_truncated")
-  resId            String?          @map("res_id")
-  resTimestamp     DateTime?        @map("res_timestamp")
-  resStatusCode    Int?             @map("res_status_code")
-  resHeaders       Json?            @map("res_headers")
-  resBody          String?          @map("res_body")
-  resBodySize      Int?             @map("res_body_size")
-  resBodyTruncated Boolean          @default(false) @map("res_body_truncated")
-  durationMs       Int?             @map("duration_ms")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  server           BackendServer    @relation(fields: [serverId], references: [id])
+  id                      String                   @id @default(uuid())
+  userId                  Int?                     @map("user_id")
+  serverId                String                   @map("server_id")
+  status                  ConnectionStatus         @default(pending)
+  reqId                   String                   @default(uuid()) @map("req_id")
+  reqTimestamp            DateTime                 @map("req_timestamp")
+  reqMethod               String                   @map("req_method")
+  reqUrl                  String                   @map("req_url")
+  reqHeaders              Json                     @map("req_headers")
+  reqBody                 String?                  @map("req_body")
+  reqBodySize             Int?                     @map("req_body_size")
+  reqBodyTruncated        Boolean                  @default(false) @map("req_body_truncated")
+  resId                   String?                  @map("res_id")
+  resTimestamp            DateTime?                @map("res_timestamp")
+  resStatusCode           Int?                     @map("res_status_code")
+  resHeaders              Json?                    @map("res_headers")
+  resBody                 String?                  @map("res_body")
+  resBodySize             Int?                     @map("res_body_size")
+  resBodyTruncated        Boolean                  @default(false) @map("res_body_truncated")
+  durationMs              Int?                     @map("duration_ms")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  participantTokenPresent Boolean                  @default(false) @map("participant_token_present")
+  accessTokenHash         String?                  @map("access_token_hash")
+  accessTokenPreview      String?                  @map("access_token_preview")
+  refreshTokenHash        String?                  @map("refresh_token_hash")
+  refreshTokenPreview     String?                  @map("refresh_token_preview")
+  issuedAccessTokenHash   String?                  @map("issued_access_token_hash")
+  issuedAccessTokenPreview String?                 @map("issued_access_token_preview")
+  issuedRefreshTokenHash  String?                  @map("issued_refresh_token_hash")
+  issuedRefreshTokenPreview String?                @map("issued_refresh_token_preview")
+  connectionKind          ConnectionKind           @default(generic) @map("connection_kind")
+  oauthCallerType         OAuthCallerType          @default(unknown) @map("oauth_caller_type")
+  server                  BackendServer            @relation(fields: [serverId], references: [id])
+  oauthTokenIssuePipeline OAuthPipeline?           @relation("OAuthTokenIssue")
+  oauthResourceCall       OAuthPipelineResourceCall? @relation("OAuthResourceConnection")
+  oauthValidationCall     OAuthPipelineResourceCall? @relation("OAuthValidationConnection")
+
+  @@index([accessTokenHash])
+  @@index([refreshTokenHash])
+  @@index([issuedAccessTokenHash])
+  @@index([issuedRefreshTokenHash])
+  @@index([connectionKind])
 
   @@map("connections")
+}
+
+model OAuthPipeline {
+  id                     String                      @id @default(uuid())
+  participantUserId      Int?                        @map("participant_user_id")
+  authenticationServerId String?                     @map("authentication_server_id")
+  accessTokenHash        String                      @unique @map("access_token_hash")
+  accessTokenPreview     String                      @map("access_token_preview")
+  tokenIssueConnectionId String?                     @unique @map("token_issue_connection_id")
+  issuedAt               DateTime?                   @map("issued_at")
+  complete               Boolean                     @default(false)
+  legal                  Boolean                     @default(false)
+  success                Boolean                     @default(false)
+  resourceCallCount      Int                         @default(0) @map("resource_call_count")
+  lastSeenAt             DateTime                    @default(now()) @map("last_seen_at")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  authenticationServer   BackendServer?              @relation(fields: [authenticationServerId], references: [id])
+  tokenIssueConnection   Connection?                 @relation("OAuthTokenIssue", fields: [tokenIssueConnectionId], references: [id])
+  resourceCalls          OAuthPipelineResourceCall[]
+
+  @@index([participantUserId])
+  @@index([authenticationServerId])
+  @@index([issuedAt])
+  @@index([complete])
+  @@index([legal])
+  @@index([success])
+  @@map("oauth_pipelines")
+}
+
+model OAuthPipelineResourceCall {
+  id                     String        @id @default(uuid())
+  pipelineId             String        @map("pipeline_id")
+  resourceConnectionId   String        @unique @map("resource_connection_id")
+  resourceServerId       String        @map("resource_server_id")
+  validationConnectionId String?       @unique @map("validation_connection_id")
+  resourceSuccess        Boolean       @default(false) @map("resource_success")
+  validationSuccess      Boolean?      @map("validation_success")
+  participantTokenPresent Boolean      @default(false) @map("participant_token_present")
+  validationMatched      Boolean       @default(false) @map("validation_matched")
+  createdAt              DateTime      @default(now()) @map("created_at")
+  pipeline               OAuthPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  resourceConnection     Connection    @relation("OAuthResourceConnection", fields: [resourceConnectionId], references: [id])
+  validationConnection   Connection?   @relation("OAuthValidationConnection", fields: [validationConnectionId], references: [id])
+  resourceServer         BackendServer @relation(fields: [resourceServerId], references: [id])
+
+  @@index([pipelineId])
+  @@index([resourceServerId])
+  @@map("oauth_pipeline_resource_calls")
 }
 
 model RefreshToken {

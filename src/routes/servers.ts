@@ -8,7 +8,9 @@ import { requireRole } from '../plugins/authorize';
 
 // ─── Response formatter ───────────────────────────────────────────────────────
 
-function fmt(s: BackendServer) {
+const SERVER_ROLES = ['generic', 'authentication', 'resource'] as const;
+
+function fmt(s: BackendServer & Record<string, any>) {
   return {
     id: s.id,
     name: s.name,
@@ -18,6 +20,12 @@ function fmt(s: BackendServer) {
     proxy_port: s.proxyPort,
     is_active: s.isActive,
     body_size_limit_kb: s.bodySizeLimitKb,
+    server_role: s.serverRole,
+    oauth_auth_server_id: s.oauthAuthServerId,
+    oauth_token_endpoint: s.oauthTokenEndpoint,
+    oauth_validation_endpoint: s.oauthValidationEndpoint,
+    oauth_validation_success_path: s.oauthValidationSuccessPath,
+    oauth_validation_success_value: s.oauthValidationSuccessValue,
     created_by: s.createdBy,
     created_at: s.createdAt,
     is_running: proxyManager.isRunning(s.id),
@@ -33,6 +41,12 @@ const createBody = z.object({
   ssl_verify: z.boolean().default(true),
   proxy_port: z.number().int().min(1024).max(65535).optional(),
   body_size_limit_kb: z.number().int().positive().nullable().optional(),
+  server_role: z.enum(SERVER_ROLES).default('generic'),
+  oauth_auth_server_id: z.string().uuid().nullable().optional(),
+  oauth_token_endpoint: z.string().startsWith('/').nullable().optional(),
+  oauth_validation_endpoint: z.string().startsWith('/').nullable().optional(),
+  oauth_validation_success_path: z.string().min(1).nullable().optional(),
+  oauth_validation_success_value: z.string().min(1).nullable().optional(),
 });
 
 const updateBody = z.object({
@@ -42,6 +56,12 @@ const updateBody = z.object({
   ssl_verify: z.boolean().optional(),
   is_active: z.boolean().optional(),
   body_size_limit_kb: z.number().int().positive().nullable().optional(),
+  server_role: z.enum(SERVER_ROLES).optional(),
+  oauth_auth_server_id: z.string().uuid().nullable().optional(),
+  oauth_token_endpoint: z.string().startsWith('/').nullable().optional(),
+  oauth_validation_endpoint: z.string().startsWith('/').nullable().optional(),
+  oauth_validation_success_path: z.string().min(1).nullable().optional(),
+  oauth_validation_success_value: z.string().min(1).nullable().optional(),
 });
 
 const importSchema = z.object({
@@ -55,6 +75,12 @@ const importSchema = z.object({
       ssl_verify: z.boolean().default(true),
       proxy_port: z.number().int().optional(),
       body_size_limit_kb: z.number().int().positive().nullable().optional(),
+      server_role: z.enum(SERVER_ROLES).default('generic').optional(),
+      oauth_auth_server_id: z.string().uuid().nullable().optional(),
+      oauth_token_endpoint: z.string().startsWith('/').nullable().optional(),
+      oauth_validation_endpoint: z.string().startsWith('/').nullable().optional(),
+      oauth_validation_success_path: z.string().min(1).nullable().optional(),
+      oauth_validation_success_value: z.string().min(1).nullable().optional(),
     }),
   ),
 });
@@ -70,10 +96,30 @@ function csvCell(v: unknown): string {
 function toCSV(servers: BackendServer[]): string {
   const headers = [
     'id', 'name', 'target_url', 'is_https', 'ssl_verify',
-    'proxy_port', 'is_active', 'body_size_limit_kb', 'created_by', 'created_at',
+    'proxy_port', 'is_active', 'body_size_limit_kb',
+    'server_role', 'oauth_auth_server_id', 'oauth_token_endpoint',
+    'oauth_validation_endpoint', 'oauth_validation_success_path',
+    'oauth_validation_success_value', 'created_by', 'created_at',
   ];
   const rows = servers.map((s) =>
-    [s.id, s.name, s.targetUrl, s.isHttps, s.sslVerify, s.proxyPort, s.isActive, s.bodySizeLimitKb, s.createdBy, s.createdAt.toISOString()]
+    [
+      s.id,
+      s.name,
+      s.targetUrl,
+      s.isHttps,
+      s.sslVerify,
+      s.proxyPort,
+      s.isActive,
+      s.bodySizeLimitKb,
+      (s as BackendServer & Record<string, any>).serverRole,
+      (s as BackendServer & Record<string, any>).oauthAuthServerId,
+      (s as BackendServer & Record<string, any>).oauthTokenEndpoint,
+      (s as BackendServer & Record<string, any>).oauthValidationEndpoint,
+      (s as BackendServer & Record<string, any>).oauthValidationSuccessPath,
+      (s as BackendServer & Record<string, any>).oauthValidationSuccessValue,
+      s.createdBy,
+      s.createdAt.toISOString(),
+    ]
       .map(csvCell)
       .join(','),
   );
@@ -112,15 +158,24 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       exported_at: new Date().toISOString(),
       exported_by: request.user.username,
       system: 'Prism',
-      servers: servers.map((s) => ({
-        name: s.name,
-        target_url: s.targetUrl,
-        is_https: s.isHttps,
-        ssl_verify: s.sslVerify,
-        proxy_port: s.proxyPort,
-        is_active: s.isActive,
-        body_size_limit_kb: s.bodySizeLimitKb,
-      })),
+      servers: servers.map((server) => {
+        const s = server as BackendServer & Record<string, any>;
+        return {
+          name: s.name,
+          target_url: s.targetUrl,
+          is_https: s.isHttps,
+          ssl_verify: s.sslVerify,
+          proxy_port: s.proxyPort,
+          is_active: s.isActive,
+          body_size_limit_kb: s.bodySizeLimitKb,
+          server_role: s.serverRole,
+          oauth_auth_server_id: s.oauthAuthServerId,
+          oauth_token_endpoint: s.oauthTokenEndpoint,
+          oauth_validation_endpoint: s.oauthValidationEndpoint,
+          oauth_validation_success_path: s.oauthValidationSuccessPath,
+          oauth_validation_success_value: s.oauthValidationSuccessValue,
+        };
+      }),
     });
   });
 
@@ -142,8 +197,9 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
 
     const warnings: string[] = [];
     const created: ReturnType<typeof fmt>[] = [];
+    const importData = parsed.data as z.infer<typeof importSchema>;
 
-    for (const s of parsed.data.servers) {
+    for (const s of importData.servers) {
       let port = s.proxy_port;
 
       if (port !== undefined) {
@@ -166,8 +222,14 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           proxyPort: port,
           isActive: true,
           bodySizeLimitKb: s.body_size_limit_kb ?? null,
+          serverRole: s.server_role ?? 'generic',
+          oauthAuthServerId: s.oauth_auth_server_id ?? null,
+          oauthTokenEndpoint: s.oauth_token_endpoint ?? null,
+          oauthValidationEndpoint: s.oauth_validation_endpoint ?? null,
+          oauthValidationSuccessPath: s.oauth_validation_success_path ?? 'active',
+          oauthValidationSuccessValue: s.oauth_validation_success_value ?? 'true',
           createdBy: request.user.sub,
-        },
+        } as any,
       });
 
       try {
@@ -198,7 +260,21 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: 'Invalid request body', details: parsed.error.flatten() });
     }
 
-    const { name, target_url, is_https, ssl_verify, proxy_port, body_size_limit_kb } = parsed.data;
+    const createData = parsed.data as z.infer<typeof createBody>;
+    const {
+      name,
+      target_url,
+      is_https,
+      ssl_verify,
+      proxy_port,
+      body_size_limit_kb,
+      server_role,
+      oauth_auth_server_id,
+      oauth_token_endpoint,
+      oauth_validation_endpoint,
+      oauth_validation_success_path,
+      oauth_validation_success_value,
+    } = createData;
 
     let proxyPort: number;
     if (proxy_port !== undefined) {
@@ -224,8 +300,14 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         proxyPort,
         isActive: true,
         bodySizeLimitKb: body_size_limit_kb ?? null,
+        serverRole: server_role,
+        oauthAuthServerId: oauth_auth_server_id ?? null,
+        oauthTokenEndpoint: oauth_token_endpoint ?? null,
+        oauthValidationEndpoint: oauth_validation_endpoint ?? null,
+        oauthValidationSuccessPath: oauth_validation_success_path ?? 'active',
+        oauthValidationSuccessValue: oauth_validation_success_value ?? 'true',
         createdBy: request.user.sub,
-      },
+      } as any,
     });
 
     try {
@@ -259,7 +341,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prism.backendServer.findUnique({ where: { id } });
     if (!existing) return reply.status(404).send({ error: 'Server not found' });
 
-    const d = parsed.data;
+    const d = parsed.data as z.infer<typeof updateBody>;
     const updated = await prism.backendServer.update({
       where: { id },
       data: {
@@ -269,7 +351,13 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         sslVerify: d.ssl_verify,
         isActive: d.is_active,
         bodySizeLimitKb: d.body_size_limit_kb,
-      },
+        serverRole: d.server_role,
+        oauthAuthServerId: d.oauth_auth_server_id,
+        oauthTokenEndpoint: d.oauth_token_endpoint,
+        oauthValidationEndpoint: d.oauth_validation_endpoint,
+        oauthValidationSuccessPath: d.oauth_validation_success_path,
+        oauthValidationSuccessValue: d.oauth_validation_success_value,
+      } as any,
     });
 
     const proxyConfigChanged =

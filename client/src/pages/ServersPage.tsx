@@ -115,21 +115,29 @@ function RowActions({
 
 interface ServerFormProps {
   initial?: AdminServer | null;
+  allServers: AdminServer[];
   onSave: (data: CreateServerBody | UpdateServerBody) => Promise<void>;
   onClose: () => void;
   saving: boolean;
   error?: string;
 }
 
-function ServerForm({ initial, onSave, onClose, saving, error }: ServerFormProps) {
+function ServerForm({ initial, allServers, onSave, onClose, saving, error }: ServerFormProps) {
   const [name, setName] = useState(initial?.name ?? '');
   const [targetUrl, setTargetUrl] = useState(initial?.target_url ?? '');
   const [sslVerify, setSslVerify] = useState(initial?.ssl_verify ?? true);
   const [proxyPort, setProxyPort] = useState(initial?.proxy_port?.toString() ?? '');
   const [bodyLimit, setBodyLimit] = useState(initial?.body_size_limit_kb?.toString() ?? '');
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+  const [serverRole, setServerRole] = useState<AdminServer['server_role']>(initial?.server_role ?? 'generic');
+  const [oauthAuthServerId, setOauthAuthServerId] = useState(initial?.oauth_auth_server_id ?? '');
+  const [oauthTokenEndpoint, setOauthTokenEndpoint] = useState(initial?.oauth_token_endpoint ?? '');
+  const [oauthValidationEndpoint, setOauthValidationEndpoint] = useState(initial?.oauth_validation_endpoint ?? '');
+  const [oauthValidationSuccessPath, setOauthValidationSuccessPath] = useState(initial?.oauth_validation_success_path ?? 'active');
+  const [oauthValidationSuccessValue, setOauthValidationSuccessValue] = useState(initial?.oauth_validation_success_value ?? 'true');
 
   const isEditing = !!initial;
+  const authServers = allServers.filter((server) => server.server_role === 'authentication' && server.id !== initial?.id);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,6 +148,12 @@ function ServerForm({ initial, onSave, onClose, saving, error }: ServerFormProps
       is_https: isHttps,
       ssl_verify: sslVerify,
       body_size_limit_kb: bodyLimit ? parseInt(bodyLimit, 10) : null,
+      server_role: serverRole,
+      oauth_auth_server_id: serverRole === 'resource' && oauthAuthServerId ? oauthAuthServerId : null,
+      oauth_token_endpoint: serverRole === 'authentication' && oauthTokenEndpoint.trim() ? oauthTokenEndpoint.trim() : null,
+      oauth_validation_endpoint: serverRole === 'authentication' && oauthValidationEndpoint.trim() ? oauthValidationEndpoint.trim() : null,
+      oauth_validation_success_path: serverRole === 'authentication' && oauthValidationSuccessPath.trim() ? oauthValidationSuccessPath.trim() : null,
+      oauth_validation_success_value: serverRole === 'authentication' && oauthValidationSuccessValue.trim() ? oauthValidationSuccessValue.trim() : null,
     };
     if (!isEditing && proxyPort) body.proxy_port = parseInt(proxyPort, 10);
     if (isEditing) body.is_active = isActive;
@@ -151,6 +165,19 @@ function ServerForm({ initial, onSave, onClose, saving, error }: ServerFormProps
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Name *</label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="FHIR Server A" required />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Role *</label>
+        <select
+          value={serverRole}
+          onChange={(e) => setServerRole(e.target.value as AdminServer['server_role'])}
+          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+        >
+          <option value="generic">Generic</option>
+          <option value="authentication">Authentication server</option>
+          <option value="resource">Resource server</option>
+        </select>
       </div>
 
       <div className="space-y-1.5">
@@ -206,6 +233,63 @@ function ServerForm({ initial, onSave, onClose, saving, error }: ServerFormProps
           min={1}
         />
       </div>
+
+      {serverRole === 'authentication' && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">OAuth Authentication Settings</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Used to detect token issuance and validation traffic for OAuth pipelines.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Token endpoint</label>
+            <Input value={oauthTokenEndpoint} onChange={(e) => setOauthTokenEndpoint(e.target.value)} placeholder="/oauth/token" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Validation endpoint</label>
+            <Input value={oauthValidationEndpoint} onChange={(e) => setOauthValidationEndpoint(e.target.value)} placeholder="/oauth/introspect" />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Validation success JSON path</label>
+              <Input value={oauthValidationSuccessPath} onChange={(e) => setOauthValidationSuccessPath(e.target.value)} placeholder="active" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Expected value</label>
+              <Input value={oauthValidationSuccessValue} onChange={(e) => setOauthValidationSuccessValue(e.target.value)} placeholder="true" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {serverRole === 'resource' && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">OAuth Resource Settings</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Optionally link this resource server to its authentication server to improve pipeline matching.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Authentication server</label>
+            <select
+              value={oauthAuthServerId}
+              onChange={(e) => setOauthAuthServerId(e.target.value)}
+              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            >
+              <option value="">Auto-detect</option>
+              {authServers.map((server) => (
+                <option key={server.id} value={server.id}>{server.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {isEditing && (
         <div className="flex items-center gap-2">
@@ -523,6 +607,7 @@ export function ServersPage() {
       >
         <ServerForm
           initial={editing}
+          allServers={servers ?? []}
           onSave={handleSave}
           onClose={() => setShowForm(false)}
           saving={createMut.isPending || updateMut.isPending}

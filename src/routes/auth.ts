@@ -6,9 +6,10 @@ import { signAccessToken, JwtPayload } from '../lib/jwt';
 import { createRefreshToken, verifyAndRotateRefreshToken, revokeRefreshToken } from '../lib/tokens';
 import { authenticate } from '../plugins/authenticate';
 
-function resolveRole(roleIds: number[]): 'admin' | 'monitor' | 'user' {
+function resolveRole(roleIds: number[]): 'admin' | 'monitor' | 'oauth2' | 'user' {
   if (roleIds.includes(1)) return 'admin';
   if (roleIds.includes(2)) return 'monitor';
+  if (roleIds.includes(3)) return 'oauth2';
   return 'user';
 }
 

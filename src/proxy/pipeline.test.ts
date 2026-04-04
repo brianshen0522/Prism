@@ -39,7 +39,7 @@ let targetServer: http.Server;
 let targetPort: number;
 let proxyServer: http.Server;
 let proxyPort: number;
-let testBackendServer: BackendServer;
+let testBackendServer: BackendServer & Record<string, any>;
 
 // Track what the target server received for assertions
 let lastTargetRequest: { method: string; url: string; headers: http.IncomingHttpHeaders; body: string } | null = null;
@@ -68,9 +68,15 @@ beforeAll(async () => {
     proxyPort: 0,
     isActive: true,
     bodySizeLimitKb: null,
+    serverRole: 'generic',
+    oauthAuthServerId: null,
+    oauthTokenEndpoint: null,
+    oauthValidationEndpoint: null,
+    oauthValidationSuccessPath: 'active',
+    oauthValidationSuccessValue: 'true',
     createdBy: 1,
     createdAt: new Date(),
-  };
+  } as BackendServer & Record<string, any>;
 
   // Start a proxy server that calls handleRequest
   proxyServer = http.createServer((req, res) => {

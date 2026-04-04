@@ -4,6 +4,7 @@ import type { JwtPayload } from '../lib/jwt';
 
 const admin: JwtPayload   = { sub: 1, username: 'admin', role: 'admin' };
 const monitor: JwtPayload = { sub: 2, username: 'mon',   role: 'monitor' };
+const oauth2: JwtPayload  = { sub: 3, username: 'oauth', role: 'oauth2' };
 const user: JwtPayload    = { sub: 10, username: 'bob',  role: 'user' };
 
 const SERVER_UUID = '123e4567-e89b-12d3-a456-426614174000';
@@ -18,6 +19,10 @@ describe('canSubscribe', () => {
     expect(canSubscribe(monitor, 'dashboard')).toBe(true);
   });
 
+  it('allows oauth2 to subscribe to dashboard', () => {
+    expect(canSubscribe(oauth2, 'dashboard')).toBe(true);
+  });
+
   it('denies user from subscribing to dashboard', () => {
     expect(canSubscribe(user, 'dashboard')).toBe(false);
   });
@@ -29,6 +34,10 @@ describe('canSubscribe', () => {
 
   it('allows monitor to subscribe to traffic:all', () => {
     expect(canSubscribe(monitor, 'traffic:all')).toBe(true);
+  });
+
+  it('allows oauth2 to subscribe to traffic:all', () => {
+    expect(canSubscribe(oauth2, 'traffic:all')).toBe(true);
   });
 
   it('denies user from subscribing to traffic:all', () => {
@@ -49,6 +58,10 @@ describe('canSubscribe', () => {
     expect(canSubscribe(monitor, 'traffic:user:10')).toBe(true);
   });
 
+  it('allows oauth2 to subscribe to any user traffic channel', () => {
+    expect(canSubscribe(oauth2, 'traffic:user:10')).toBe(true);
+  });
+
   it("denies user from subscribing to another user's traffic channel", () => {
     expect(canSubscribe(user, 'traffic:user:99')).toBe(false);
   });
@@ -60,6 +73,10 @@ describe('canSubscribe', () => {
 
   it('allows monitor to subscribe to a server channel', () => {
     expect(canSubscribe(monitor, `server:${SERVER_UUID}`)).toBe(true);
+  });
+
+  it('allows oauth2 to subscribe to a server channel', () => {
+    expect(canSubscribe(oauth2, `server:${SERVER_UUID}`)).toBe(true);
   });
 
   it('denies user from subscribing to a server channel', () => {

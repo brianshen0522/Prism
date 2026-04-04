@@ -8,12 +8,13 @@ import { MyConnectionsPage } from './pages/MyConnectionsPage';
 import { ConnectionDetailPage } from './pages/ConnectionDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { GlobalTrafficPage } from './pages/GlobalTrafficPage';
+import { OAuthPipelineDetailPage } from './pages/OAuthPipelineDetailPage';
 import { ServersPage } from './pages/ServersPage';
 import { SettingsPage } from './pages/SettingsPage';
 
 function DefaultRedirect() {
   const role = useAuthStore((s) => s.user?.role);
-  const isPrivileged = role === 'admin' || role === 'monitor';
+  const isPrivileged = role === 'admin' || role === 'monitor' || role === 'oauth2';
   return <Navigate to={isPrivileged ? '/traffic' : '/connections'} replace />;
 }
 
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/token" element={<TokenPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/traffic" element={<GlobalTrafficPage />} />
+          <Route path="/oauth/pipelines/:id" element={<OAuthPipelineDetailPage />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

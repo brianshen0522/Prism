@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export interface AuthUser {
   sub: number;
   username: string;
-  role: 'admin' | 'monitor' | 'user';
+  role: 'admin' | 'monitor' | 'oauth2' | 'user';
 }
 
 interface AuthState {

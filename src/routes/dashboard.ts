@@ -4,7 +4,7 @@ import { prism } from '../db/prism';
 import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
 
-const privileged = [authenticate, requireRole('admin', 'monitor')];
+const privileged = [authenticate, requireRole('admin', 'monitor', 'oauth2')];
 
 async function getRequestsWindowMinutes(): Promise<number> {
   const s = await prism.systemSetting.findUnique({ where: { key: 'dashboard_requests_window_minutes' } });

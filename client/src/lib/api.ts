@@ -1,0 +1,357 @@
+import { useAuthStore, REFRESH_TOKEN_KEY } from '../store/auth';
+
+const BASE = '/api';
+
+// Decode a JWT payload without verification (client-side display only)
+function decodeJwt(token: string) {
+  try {
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!rt) return null;
+
+  const res = await fetch(`${BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: rt }),
+  });
+
+  if (!res.ok) {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    useAuthStore.getState().clearAuth();
+    return null;
+  }
+
+  const data = await res.json();
+  localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+
+  const payload = decodeJwt(data.access_token);
+  if (payload) {
+    useAuthStore.getState().setAuth(data.access_token, {
+      sub: payload.sub,
+      username: payload.username,
+      role: payload.role,
+    });
+  }
+
+  return data.access_token as string;
+}
+
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  let token = useAuthStore.getState().accessToken;
+
+  const doFetch = (t: string | null) =>
+    fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init.body != null ? { 'Content-Type': 'application/json' } : {}),
+        ...(t ? { Authorization: `Bearer ${t}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+
+  let res = await doFetch(token);
+
+  if (res.status === 401) {
+    token = await refreshAccessToken();
+    if (token) res = await doFetch(token);
+  }
+
+  return res;
+}
+
+async function json<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await apiFetch(path, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export async function login(username: string, password: string) {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? 'Login failed');
+  }
+  const data = await res.json();
+  localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+  const payload = decodeJwt(data.access_token);
+  if (payload) {
+    useAuthStore.getState().setAuth(data.access_token, {
+      sub: payload.sub,
+      username: payload.username,
+      role: payload.role,
+    });
+  }
+  return data;
+}
+
+export async function logout() {
+  const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+  await apiFetch('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: rt ?? undefined }),
+  });
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  useAuthStore.getState().clearAuth();
+}
+
+export async function tryRestoreSession(): Promise<boolean> {
+  const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!rt) return false;
+  const token = await refreshAccessToken();
+  return token !== null;
+}
+
+// ─── Connections ──────────────────────────────────────────────────────────────
+
+export interface ConnectionSummary {
+  id: string;
+  user_id: number | null;
+  server_id: string;
+  server_name: string | null;
+  status: 'pending' | 'completed' | 'error';
+  req_method: string;
+  req_url: string;
+  req_timestamp: string;
+  req_body_size: number | null;
+  res_status_code: number | null;
+  res_body_size: number | null;
+  duration_ms: number | null;
+}
+
+export interface ConnectionDetail extends ConnectionSummary {
+  req_headers: Record<string, string | string[]>;
+  req_body: string | null;
+  req_body_truncated: boolean;
+  res_timestamp: string | null;
+  res_headers: Record<string, string | string[]> | null;
+  res_body: string | null;
+  res_body_truncated: boolean;
+}
+
+export interface ConnectionsPage {
+  data: ConnectionSummary[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export function fetchConnections(params: {
+  page?: number;
+  limit?: number;
+  server_id?: string | string[];
+  status?: string | string[];
+  method?: string | string[];
+  user_id?: string;
+  from?: string;
+  to?: string;
+  /** JSON-encoded array of {term, scopes[]} — scopes empty means all fields */
+  sq?: string;
+  sq_logic?: 'and' | 'or';
+  /** 'all' lets non-privileged users see all traffic (not just their own) */
+  scope?: 'mine' | 'all';
+  sort?: string;
+  order?: 'asc' | 'desc';
+}) {
+  const q = new URLSearchParams();
+  if (params.page) q.set('page', String(params.page));
+  if (params.limit) q.set('limit', String(params.limit));
+  const asStr = (v: string | string[] | undefined) =>
+    Array.isArray(v) ? v.join(',') : (v ?? '');
+  const sv = asStr(params.server_id); if (sv) q.set('server_id', sv);
+  const st = asStr(params.status);    if (st) q.set('status', st);
+  const mt = asStr(params.method);    if (mt) q.set('method', mt);
+  if (params.user_id) q.set('user_id', params.user_id);
+  if (params.from) q.set('from', params.from);
+  if (params.to) q.set('to', params.to);
+  if (params.sq) q.set('sq', params.sq);
+  if (params.sq_logic) q.set('sq_logic', params.sq_logic);
+  if (params.scope) q.set('scope', params.scope);
+  if (params.sort) q.set('sort', params.sort);
+  if (params.order) q.set('order', params.order);
+  return json<ConnectionsPage>(`/connections?${q}`);
+}
+
+export function fetchConnection(id: string) {
+  return json<ConnectionDetail>(`/connections/${id}`);
+}
+
+export interface UserSummary {
+  id: number;
+  username: string;
+  name: string;
+  role: 'admin' | 'monitor' | 'user';
+}
+
+export function fetchUsers() {
+  return json<UserSummary[]>('/users');
+}
+
+// ─── Participant Token ────────────────────────────────────────────────────────
+
+export interface ParticipantToken {
+  token: string;
+  expires_at: string;
+  created_at: string;
+  header_name: string;
+}
+
+export function fetchParticipantToken() {
+  return json<ParticipantToken>('/token');
+}
+
+export function regenParticipantToken() {
+  return json<ParticipantToken>('/token/regen', { method: 'POST' });
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export interface DashboardStats {
+  totalRequests: number;
+  requestsLastWindow: number;
+  errorRate: number;
+  activeServers: number;
+  windowMinutes: number;
+}
+
+export interface ChartPoint {
+  hour: string;
+  count: number;
+  errors: number;
+}
+
+export interface ServerOption {
+  id: string;
+  name: string;
+  proxy_port: number;
+  is_active: boolean;
+}
+
+export function fetchDashboardStats() {
+  return json<DashboardStats>('/dashboard/stats');
+}
+
+export interface ChartData {
+  hours: number;
+  data: ChartPoint[];
+}
+
+export function fetchDashboardChart() {
+  return json<ChartData>('/dashboard/chart');
+}
+
+export function fetchDashboardServers() {
+  return json<ServerOption[]>('/dashboard/servers');
+}
+
+// ─── Admin: Servers ───────────────────────────────────────────────────────────
+
+export interface AdminServer {
+  id: string;
+  name: string;
+  target_url: string;
+  is_https: boolean;
+  ssl_verify: boolean;
+  proxy_port: number;
+  is_active: boolean;
+  body_size_limit_kb: number | null;
+  created_by: number;
+  created_at: string;
+  is_running: boolean;
+}
+
+export interface CreateServerBody {
+  name: string;
+  target_url: string;
+  is_https?: boolean;
+  ssl_verify?: boolean;
+  proxy_port?: number;
+  body_size_limit_kb?: number | null;
+}
+
+export interface UpdateServerBody {
+  name?: string;
+  target_url?: string;
+  is_https?: boolean;
+  ssl_verify?: boolean;
+  is_active?: boolean;
+  body_size_limit_kb?: number | null;
+}
+
+export function fetchAdminServers() {
+  return json<AdminServer[]>('/admin/servers');
+}
+
+export function createServer(body: CreateServerBody) {
+  return json<AdminServer>('/admin/servers', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateServer(id: string, body: UpdateServerBody) {
+  return json<AdminServer>(`/admin/servers/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export async function deleteServer(id: string) {
+  const res = await apiFetch(`/admin/servers/${id}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+}
+
+export function startServer(id: string) {
+  return json<AdminServer>(`/admin/servers/${id}/start`, { method: 'POST' });
+}
+
+export function stopServer(id: string) {
+  return json<AdminServer>(`/admin/servers/${id}/stop`, { method: 'POST' });
+}
+
+export function restartServer(id: string) {
+  return json<AdminServer>(`/admin/servers/${id}/restart`, { method: 'POST' });
+}
+
+export interface ImportResult {
+  created: number;
+  warnings: string[];
+  servers: AdminServer[];
+}
+
+export function importServers(payload: unknown) {
+  return json<ImportResult>('/admin/servers/import', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+// ─── Admin: Settings ──────────────────────────────────────────────────────────
+
+export interface Setting {
+  key: string;
+  value: string;
+  updated_at: string;
+}
+
+export function fetchSettings() {
+  return json<Setting[]>('/admin/settings');
+}
+
+export function upsertSetting(key: string, value: string) {
+  return json<Setting>(`/admin/settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function deleteSetting(key: string) {
+  const res = await apiFetch(`/admin/settings/${encodeURIComponent(key)}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+}

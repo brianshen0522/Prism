@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  prism-app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+      - "${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}:${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}"
+    env_file:
+      - .env
+    depends_on:
+      postgres-prism:
+        condition: service_healthy
+
+  postgres-prism:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PROXY_DB_NAME:-prism}
+      POSTGRES_USER: ${PROXY_DB_USER:-prism}
+      POSTGRES_PASSWORD: ${PROXY_DB_PASS}
+    volumes:
+      - prism_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PROXY_DB_USER:-prism} -d ${PROXY_DB_NAME:-prism}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  prism_pgdata:

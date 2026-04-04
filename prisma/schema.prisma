@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PRISM_DATABASE_URL")
+}
+
+enum ConnectionStatus {
+  pending
+  completed
+  error
+}
+
+model BackendServer {
+  id              String       @id @default(uuid())
+  name            String
+  targetUrl       String       @map("target_url")
+  isHttps         Boolean      @default(false) @map("is_https")
+  sslVerify       Boolean      @default(true) @map("ssl_verify")
+  proxyPort       Int          @unique @map("proxy_port")
+  isActive        Boolean      @default(true) @map("is_active")
+  bodySizeLimitKb Int?         @map("body_size_limit_kb")
+  createdBy       Int          @map("created_by")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  connections     Connection[]
+
+  @@map("backend_servers")
+}
+
+model Connection {
+  id               String           @id @default(uuid())
+  userId           Int?             @map("user_id")
+  serverId         String           @map("server_id")
+  status           ConnectionStatus @default(pending)
+  reqId            String           @default(uuid()) @map("req_id")
+  reqTimestamp     DateTime         @map("req_timestamp")
+  reqMethod        String           @map("req_method")
+  reqUrl           String           @map("req_url")
+  reqHeaders       Json             @map("req_headers")
+  reqBody          String?          @map("req_body")
+  reqBodySize      Int?             @map("req_body_size")
+  reqBodyTruncated Boolean          @default(false) @map("req_body_truncated")
+  resId            String?          @map("res_id")
+  resTimestamp     DateTime?        @map("res_timestamp")
+  resStatusCode    Int?             @map("res_status_code")
+  resHeaders       Json?            @map("res_headers")
+  resBody          String?          @map("res_body")
+  resBodySize      Int?             @map("res_body_size")
+  resBodyTruncated Boolean          @default(false) @map("res_body_truncated")
+  durationMs       Int?             @map("duration_ms")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  server           BackendServer    @relation(fields: [serverId], references: [id])
+
+  @@map("connections")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    Int      @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("refresh_tokens")
+}
+
+model ParticipantToken {
+  id        String   @id @default(uuid())
+  userId    Int      @unique @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("participant_tokens")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedBy Int      @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}

@@ -121,7 +121,9 @@ function FlowCard({
   right,
   children,
   selected = false,
+  highlighted = false,
   onClick,
+  onHoverChange,
 }: {
   title: string;
   subtitle?: string;
@@ -129,7 +131,9 @@ function FlowCard({
   right?: ReactNode;
   children?: ReactNode;
   selected?: boolean;
+  highlighted?: boolean;
   onClick?: () => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const tone = toneForStatus(status);
 
@@ -139,9 +143,12 @@ function FlowCard({
         'rounded-xl border p-3 shadow-sm transition-all duration-200',
         tone.card,
         selected && 'ring-2 ring-blue-500 border-blue-300 dark:border-blue-700',
+        highlighted && !selected && '-translate-y-0.5 shadow-lg scale-[1.01]',
         onClick && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:scale-[1.01] active:scale-[0.995]',
       )}
       onClick={onClick}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -190,12 +197,14 @@ function ActorHeader({
   );
 }
 
-function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection, selectedConnectionId }: {
+function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection, selectedConnectionId, hoveredConnectionId, onHoverConnection }: {
   summary: Awaited<ReturnType<typeof fetchOAuthPipeline>>['summary'];
   tokenIssue: Awaited<ReturnType<typeof fetchOAuthPipeline>>['token_issue'];
   resourceCalls: Awaited<ReturnType<typeof fetchOAuthPipeline>>['resource_calls'];
   onInspectConnection: (id: string) => void;
   selectedConnectionId: string | null;
+  hoveredConnectionId: string | null;
+  onHoverConnection: (id: string | null) => void;
 }) {
   const openConnection = (id: string | null | undefined) => {
     if (id) onInspectConnection(id);
@@ -257,7 +266,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                 subtitle={tokenIssue.req_timestamp ? fmtDate(tokenIssue.req_timestamp) : 'No request recorded'}
                 status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'}
                 selected={selectedConnectionId === tokenIssue.connection_id}
+                highlighted={!!tokenIssue.connection_id && hoveredConnectionId === tokenIssue.connection_id}
                 onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                onHoverChange={tokenIssue.connection_id ? (hovered) => onHoverConnection(hovered ? tokenIssue.connection_id : null) : undefined}
                 right={(
                   !tokenIssue.connection_id
                     ? <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">No request</Badge>
@@ -276,7 +287,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                 subtitle="Authentication server response"
                 status={tokenIssueStatus}
                 selected={selectedConnectionId === tokenIssue.connection_id}
+                highlighted={!!tokenIssue.connection_id && hoveredConnectionId === tokenIssue.connection_id}
                 onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                onHoverChange={tokenIssue.connection_id ? (hovered) => onHoverConnection(hovered ? tokenIssue.connection_id : null) : undefined}
                 right={(
                   <Badge className={tokenIssue.status_code ? httpStatusColor(tokenIssue.status_code) : toneForStatus(tokenIssueStatus).badge}>
                     {tokenIssue.status_code ?? '—'}
@@ -304,7 +317,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                 subtitle={tokenIssue.req_timestamp ? fmtDate(tokenIssue.req_timestamp) : 'No request recorded'}
                 status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'}
                 selected={selectedConnectionId === tokenIssue.connection_id}
+                highlighted={!!tokenIssue.connection_id && hoveredConnectionId === tokenIssue.connection_id}
                 onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                onHoverChange={tokenIssue.connection_id ? (hovered) => onHoverConnection(hovered ? tokenIssue.connection_id : null) : undefined}
                 right={(
                   !tokenIssue.connection_id
                     ? <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">No request</Badge>
@@ -344,7 +359,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                 subtitle="Authentication server response"
                 status={tokenIssueStatus}
                 selected={selectedConnectionId === tokenIssue.connection_id}
+                highlighted={!!tokenIssue.connection_id && hoveredConnectionId === tokenIssue.connection_id}
                 onClick={tokenIssue.connection_id ? () => openConnection(tokenIssue.connection_id) : undefined}
+                onHoverChange={tokenIssue.connection_id ? (hovered) => onHoverConnection(hovered ? tokenIssue.connection_id : null) : undefined}
                 right={(
                   <Badge className={tokenIssue.status_code ? httpStatusColor(tokenIssue.status_code) : toneForStatus(tokenIssueStatus).badge}>
                     {tokenIssue.status_code ?? '—'}
@@ -413,7 +430,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                       subtitle={fmtDate(call.req_timestamp)}
                       status={call.participant_token_present ? resourceStatus : 'error'}
                       selected={selectedConnectionId === call.resource_connection_id}
+                      highlighted={hoveredConnectionId === call.resource_connection_id}
                       onClick={() => openConnection(call.resource_connection_id)}
+                      onHoverChange={(hovered) => onHoverConnection(hovered ? call.resource_connection_id : null)}
                       right={<Badge className={methodColor(call.method)}>{call.method}</Badge>}
                     >
                       <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
@@ -434,7 +453,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                       subtitle="Resource server response"
                       status={resourceStatus}
                       selected={selectedConnectionId === call.resource_connection_id}
+                      highlighted={hoveredConnectionId === call.resource_connection_id}
                       onClick={() => openConnection(call.resource_connection_id)}
+                      onHoverChange={(hovered) => onHoverConnection(hovered ? call.resource_connection_id : null)}
                       right={(
                         <Badge className={call.status_code ? httpStatusColor(call.status_code) : toneForStatus(resourceStatus).badge}>
                           {call.status_code ?? '—'}
@@ -483,7 +504,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                       subtitle={fmtDate(call.req_timestamp)}
                       status={call.participant_token_present ? resourceStatus : 'error'}
                       selected={selectedConnectionId === call.resource_connection_id}
+                      highlighted={hoveredConnectionId === call.resource_connection_id}
                       onClick={() => openConnection(call.resource_connection_id)}
+                      onHoverChange={(hovered) => onHoverConnection(hovered ? call.resource_connection_id : null)}
                       right={<Badge className={methodColor(call.method)}>{call.method}</Badge>}
                     >
                       <p className="font-mono text-xs text-gray-600 dark:text-gray-300 break-all">{call.url}</p>
@@ -504,7 +527,9 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                       subtitle="Resource server response"
                       status={resourceStatus}
                       selected={selectedConnectionId === call.resource_connection_id}
+                      highlighted={hoveredConnectionId === call.resource_connection_id}
                       onClick={() => openConnection(call.resource_connection_id)}
+                      onHoverChange={(hovered) => onHoverConnection(hovered ? call.resource_connection_id : null)}
                       right={(
                         <Badge className={call.status_code ? httpStatusColor(call.status_code) : toneForStatus(resourceStatus).badge}>
                           {call.status_code ?? '—'}
@@ -560,6 +585,7 @@ export function OAuthPipelineDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['oauth-pipeline', id],
     queryFn: () => fetchOAuthPipeline(id),
@@ -773,6 +799,8 @@ export function OAuthPipelineDetailPage() {
             resourceCalls={resource_calls}
             onInspectConnection={setSelectedConnectionId}
             selectedConnectionId={selectedConnectionId}
+            hoveredConnectionId={hoveredConnectionId}
+            onHoverConnection={setHoveredConnectionId}
           />
 
         </div>

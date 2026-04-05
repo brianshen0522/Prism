@@ -4,6 +4,13 @@ Prism exposes API endpoints for the participant token, also referred to in the U
 
 For external integrations, the preferred pattern is to authenticate each request with `username` and `password` in the request body. Legacy Bearer-token routes remain available for the Prism web UI.
 
+## Security Notes
+
+- Use the username/password APIs only over HTTPS.
+- Do not paste participant tokens into shared logs or tickets unless absolutely necessary.
+- Prefer validating a token through the API instead of manually distributing raw token values.
+- If a participant token is suspected to be exposed, use `POST /api/token/renew` to rotate it immediately.
+
 ## Endpoints
 
 ### `POST /api/token/current`
@@ -81,6 +88,12 @@ This is useful when you want to know:
 - whether that token is still valid
 - what token status Prism currently sees for that user
 
+This mode is intended for:
+
+- client self-checks
+- onboarding checks
+- support flows where the user wants to confirm their current token state
+
 #### Validate a specific token value
 
 If `token` is provided, Prism validates that exact token value.
@@ -113,6 +126,12 @@ Possible `reason` values:
 - `valid`
 - `expired`
 - `not_found`
+
+This mode is intended for:
+
+- validating a token copied from another system
+- checking whether a token still belongs to the current user
+- confirming whether a previously issued token has already expired
 
 ## Legacy Aliases
 

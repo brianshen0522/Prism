@@ -67,6 +67,55 @@ Preferred API usage is `username/password` in the request body. Legacy authentic
 - Add focused tests when changing proxy flow, auth behavior, route filtering, or OAuth matching
 - Run targeted Vitest commands before broad test runs when debugging
 
+## Typical Workflows
+
+### Schema Change
+
+When changing Prisma models:
+
+1. edit `prisma/schema.prisma`
+2. run:
+
+```bash
+npm run db:push
+npm run db:generate
+```
+
+3. update any affected route or frontend types
+4. run targeted tests
+5. run `npm run build`
+
+### Frontend Page Change
+
+When changing a major page such as traffic, servers, or guide pages:
+
+1. update page component and any shared primitives
+2. verify responsive behavior
+3. confirm affected API types still match backend responses
+4. run `npm run build`
+
+### OAuth Pipeline Change
+
+When changing OAuth extraction, reconcile logic, or OAuth UI:
+
+1. update backend classification / reconcile logic
+2. add or adjust focused OAuth tests
+3. verify:
+   - raw traffic still loads
+   - OAuth list still loads
+   - OAuth detail still renders
+4. run `npm run build`
+5. run targeted Vitest for OAuth-related files when available
+
+### Server Configuration Change
+
+When changing server configuration fields:
+
+1. update backend schema and route validation
+2. update frontend form state and defaults
+3. verify `Servers` page create/edit flows
+4. verify `Test target` and heartbeat behavior if impacted
+
 ## Notes
 
 - Prisma client types must be regenerated after schema changes.

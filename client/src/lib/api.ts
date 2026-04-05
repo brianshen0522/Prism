@@ -449,6 +449,55 @@ export interface ParticipantTokenCredentials {
   password: string;
 }
 
+export interface IntegrationGuideListResponse {
+  participant_token: {
+    header_name: string;
+    token: string | null;
+    masked_token: string | null;
+    expires_at: string | null;
+  };
+  overview: {
+    total_servers: number;
+    direct_servers: number;
+    oauth_pairs: number;
+  };
+  items: Array<{
+    id: string;
+    kind: 'direct-server' | 'oauth-pair';
+    title: string;
+    description: string | null;
+    role: 'generic' | 'resource';
+    public_base_url: string;
+    target_url: string;
+    auth_required: boolean;
+    authentication_server: {
+      id: string;
+      name: string;
+      public_base_url: string;
+      token_endpoint: string | null;
+    } | null;
+    summary: string;
+  }>;
+}
+
+export interface IntegrationGuideDetailResponse {
+  participant_token: IntegrationGuideListResponse['participant_token'];
+  item: IntegrationGuideListResponse['items'][number];
+  detail: {
+    notes: string[];
+    steps: Array<{
+      id: string;
+      title: string;
+      description: string;
+      method: string | null;
+      url: string | null;
+      headers: Array<{ name: string; value: string }>;
+      curl: string | null;
+      kind: 'participant-token' | 'token-request' | 'resource-call' | 'note';
+    }>;
+  };
+}
+
 export function fetchParticipantToken() {
   return json<ParticipantToken>('/token');
 }
@@ -494,6 +543,14 @@ export function validateParticipantTokenWithCredentials(
     method: 'POST',
     body: JSON.stringify(token ? { ...credentials, token } : credentials),
   });
+}
+
+export function fetchIntegrationGuide() {
+  return json<IntegrationGuideListResponse>('/integration-guide');
+}
+
+export function fetchIntegrationGuideDetail(id: string) {
+  return json<IntegrationGuideDetailResponse>(`/integration-guide/${id}`);
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

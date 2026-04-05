@@ -29,6 +29,7 @@ Prism combines a Fastify API, a React dashboard, dynamic proxy listeners, WebSoc
 - [Database Model](docs/database.md)
 - [Participant Tokens](docs/participant-tokens.md)
 - [OAuth Pipelines](docs/oauth-pipelines.md)
+- [Integration Guide](docs/integration-guide.md)
 - [OAuth Simulator](simulators/oauth-simulator/README.md)
 - [Contributor Guide](AGENTS.md)
 
@@ -45,6 +46,8 @@ Prism combines a Fastify API, a React dashboard, dynamic proxy listeners, WebSoc
 - `Dashboard` shows recent raw connections and recent OAuth pipelines
 - `Global Traffic` supports raw traffic and OAuth pipeline modes
 - `My Connections` supports personal raw traffic and personal OAuth pipelines
+- `Integration Guide` provides a catalog of available services and a dedicated detail guide for each one
+- `Integration Guide` also acts as the primary onboarding page after login
 - `Servers` includes role-aware server configuration, target tests, heartbeat checks, and compact status timelines
 - `Participant Token` shows the current token, usage instructions, and API curl examples using the page’s current origin
 

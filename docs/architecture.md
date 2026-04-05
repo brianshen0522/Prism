@@ -29,6 +29,7 @@ Heartbeat requests are marked as system traffic so operators can distinguish the
 
 ## Major Screens
 
+- `Integration Guide` generates a user-facing service catalog and detail guides from server configuration.
 - `Dashboard` shows both recent raw connections and recent OAuth pipelines.
 - `Global Traffic` switches between raw traffic and OAuth pipeline views.
 - `My Connections` gives each user the same two modes, scoped to their own traffic.
@@ -57,3 +58,14 @@ An OAuth pipeline can include:
 - refresh-token lineage
 
 See [OAuth Pipelines](oauth-pipelines.md) for rules and UI behavior.
+
+## Generated Access Guidance
+
+Prism can generate a user-facing integration guide from active server configuration. The guide uses:
+
+- the participant token header name
+- the current user's participant token
+- server role and public access URL
+- linked authentication server settings
+
+This allows the frontend to render a service catalog on `/guide` and a generated detail page on `/guide/:id` without relying on hand-written documents.

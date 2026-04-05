@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound, List, LayoutDashboard, Globe, Server, Settings, Menu, X } from 'lucide-react';
+import { LogOut, KeyRound, List, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { logout } from '../lib/api';
 import { cn } from '../lib/utils';
@@ -27,6 +27,7 @@ export function NavBar() {
   const links = [
     ...(isPrivileged ? monitorLinks : [{ to: '/connections', label: 'My Connections', icon: List }]),
     { to: '/token', label: 'My Token', icon: KeyRound },
+    { to: '/guide', label: 'Integration Guide', icon: BookOpen },
     ...(isAdmin ? adminLinks : []),
   ];
 

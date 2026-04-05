@@ -48,7 +48,12 @@ ACCESS_TOKEN=$(curl -s \
 curl -i \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H 'X-Participant-Token: demo-participant-token' \
-  http://localhost:4020/resource/patient
+  http://localhost:4020/fhir/Patient
+
+curl -i \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H 'X-Participant-Token: demo-participant-token' \
+  'http://localhost:4020/fhir/Patient?family=prism'
 ```
 
 ## Suggested Prism Setup for These Scenarios

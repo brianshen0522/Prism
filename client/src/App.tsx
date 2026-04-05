@@ -4,6 +4,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuthStore } from './store/auth';
 import { LoginPage } from './pages/LoginPage';
 import { TokenPage } from './pages/TokenPage';
+import { IntegrationGuidePage } from './pages/IntegrationGuidePage';
+import { IntegrationGuideDetailPage } from './pages/IntegrationGuideDetailPage';
 import { MyConnectionsPage } from './pages/MyConnectionsPage';
 import { ConnectionDetailPage } from './pages/ConnectionDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -15,7 +17,7 @@ import { SettingsPage } from './pages/SettingsPage';
 function DefaultRedirect() {
   const role = useAuthStore((s) => s.user?.role);
   const isPrivileged = role === 'admin' || role === 'monitor' || role === 'oauth2';
-  return <Navigate to={isPrivileged ? '/traffic' : '/connections'} replace />;
+  return <Navigate to={isPrivileged ? '/guide' : '/guide'} replace />;
 }
 
 export default function App() {
@@ -27,6 +29,8 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<DefaultRedirect />} />
           <Route path="/connections" element={<MyConnectionsPage />} />
+          <Route path="/guide" element={<IntegrationGuidePage />} />
+          <Route path="/guide/:id" element={<IntegrationGuideDetailPage />} />
           <Route path="/connections/:id" element={<ConnectionDetailPage />} />
           <Route path="/token" element={<TokenPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

@@ -52,6 +52,8 @@ Current routes:
 - `POST /api/token/current`
 - `POST /api/token/renew`
 - `POST /api/token/validate`
+- `GET /api/integration-guide`
+- `GET /api/integration-guide/:id`
 
 Preferred API usage is `username/password` in the request body. Legacy authenticated routes remain available for the web UI:
 
@@ -70,6 +72,7 @@ Preferred API usage is `username/password` in the request body. Legacy authentic
 - Prisma client types must be regenerated after schema changes.
 - If code uses new DB columns, the database must be updated before runtime testing.
 - The OAuth simulator has its own docs under [`simulators/oauth-simulator/`](../simulators/oauth-simulator/README.md).
+- The user-facing `Integration Guide` now uses a catalog/detail model built from `/api/integration-guide` and `/api/integration-guide/:id`.
 - Server config now includes:
   - optional descriptions
   - direct target tests

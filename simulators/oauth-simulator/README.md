@@ -14,6 +14,13 @@ It is meant for local testing of raw traffic capture, OAuth pipeline detection, 
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /health/started`
+- `GET /actuator/health`
+- `GET /actuator/health/liveness`
+- `GET /actuator/health/readiness`
+- `GET /fhir`
+- `GET /fhir/metadata`
+- `GET /fhir/Patient`
+- `GET /fhir/Patient/:id`
 - `GET /realms/master`
 - `GET /realms/master/.well-known/openid-configuration`
 - `GET /admin/realms/master`
@@ -54,6 +61,19 @@ Keycloak-like health check paths on the authentication server:
 - `/health/live`
 - `/health/ready`
 - `/health/started`
+
+HAPI FHIR-like health check paths on the resource server:
+
+- `/actuator/health`
+- `/actuator/health/liveness`
+- `/actuator/health/readiness`
+
+HAPI FHIR-like resource paths on the resource server:
+
+- `/fhir`
+- `/fhir/metadata`
+- `/fhir/Patient` for Patient search bundles
+- `/fhir/Patient/:id` for Patient instance reads
 
 Additional Keycloak-like discovery and admin paths:
 

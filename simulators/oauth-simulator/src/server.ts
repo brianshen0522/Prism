@@ -71,7 +71,7 @@ function buildUrl(baseUrl: string, path: string): string {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
 
-function realmBaseUrl(host: string, port: number) {
+function serverBaseUrl(host: string, port: number) {
   return `http://127.0.0.1:${port}`;
 }
 
@@ -99,10 +99,78 @@ function logEvent(input: {
   console.log(`${prefix} ${input.message}${detailString}`);
 }
 
+function buildPatient(id: string) {
+  return {
+    resourceType: 'Patient',
+    id,
+    identifier: [
+      {
+        system: 'http://prism.local/mrn',
+        value: id === 'example-patient' ? 'MRN-1001' : 'MRN-1002',
+      },
+    ],
+    name: [
+      id === 'example-patient'
+        ? {
+            family: 'Prism',
+            given: ['OAuth', 'Simulator'],
+          }
+        : {
+            family: 'Hapi',
+            given: ['Fhir', 'Demo'],
+          },
+    ],
+    gender: id === 'example-patient' ? 'unknown' : 'female',
+    active: true,
+  };
+}
+
+function buildPatientBundle(baseUrl: string, query: Record<string, unknown>) {
+  const requestedName = typeof query.name === 'string' ? query.name.trim().toLowerCase() : '';
+  const requestedFamily = typeof query.family === 'string' ? query.family.trim().toLowerCase() : '';
+  const requestedIdentifier = typeof query.identifier === 'string' ? query.identifier.trim() : '';
+  const patients = [buildPatient('example-patient'), buildPatient('demo-patient')].filter((patient) => {
+    if (requestedName) {
+      const fullName = patient.name.flatMap((name) => [name.family, ...(name.given ?? [])]).join(' ').toLowerCase();
+      if (!fullName.includes(requestedName)) return false;
+    }
+    if (requestedFamily) {
+      const family = patient.name[0]?.family?.toLowerCase() ?? '';
+      if (!family.includes(requestedFamily)) return false;
+    }
+    if (requestedIdentifier) {
+      const identifiers = patient.identifier?.map((identifier) => identifier.value) ?? [];
+      if (!identifiers.includes(requestedIdentifier)) return false;
+    }
+    return true;
+  });
+
+  return {
+    resourceType: 'Bundle',
+    id: 'patient-search-results',
+    type: 'searchset',
+    total: patients.length,
+    link: [
+      {
+        relation: 'self',
+        url: buildUrl(baseUrl, '/fhir/Patient'),
+      },
+    ],
+    entry: patients.map((patient) => ({
+      fullUrl: buildUrl(baseUrl, `/fhir/Patient/${patient.id}`),
+      resource: patient,
+      search: {
+        mode: 'match',
+      },
+    })),
+  };
+}
+
 async function main() {
   const config = loadConfig();
   const store = new TokenStore();
-  const authBaseUrl = realmBaseUrl(config.auth.host, config.auth.port);
+  const authBaseUrl = serverBaseUrl(config.auth.host, config.auth.port);
+  const resourceBaseUrl = serverBaseUrl(config.resource.host, config.resource.port);
   const realmName = 'master';
 
   const authApp = Fastify({ logger: false });
@@ -114,6 +182,74 @@ async function main() {
       {
         name: 'Keycloak database connections async health check',
         status: 'UP',
+      },
+    ],
+  };
+  const hapiFhirHealthPayload = {
+    status: 'UP',
+  };
+  const hapiFhirLivenessPayload = {
+    status: 'UP',
+    components: {
+      livenessState: {
+        status: 'UP',
+      },
+    },
+    groups: ['liveness'],
+  };
+  const hapiFhirReadinessPayload = {
+    status: 'UP',
+    components: {
+      readinessState: {
+        status: 'UP',
+      },
+    },
+    groups: ['readiness'],
+  };
+  const capabilityStatement = {
+    resourceType: 'CapabilityStatement',
+    status: 'active',
+    date: new Date().toISOString(),
+    kind: 'instance',
+    fhirVersion: '4.0.1',
+    format: ['json'],
+    software: {
+      name: 'HAPI FHIR Simulator',
+      version: '1.0.0',
+    },
+    implementation: {
+      description: 'Prism OAuth simulator FHIR facade',
+      url: buildUrl(resourceBaseUrl, '/fhir'),
+    },
+    rest: [
+      {
+        mode: 'server',
+        security: {
+          extension: [
+            {
+              url: 'http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris',
+              extension: [
+                {
+                  url: 'token',
+                  valueUri: buildUrl(authBaseUrl, config.auth.tokenEndpoint),
+                },
+              ],
+            },
+          ],
+        },
+        resource: [
+          {
+            type: 'Patient',
+            interaction: [
+              {
+                code: 'search-type',
+              },
+              {
+                code: 'read',
+              },
+            ],
+          },
+        ],
       },
     ],
   };
@@ -159,6 +295,11 @@ async function main() {
     loginWithEmailAllowed: true,
   }));
   resourceApp.get('/health', async () => ({ ok: true, role: 'resource' }));
+  resourceApp.get('/actuator/health', async () => hapiFhirHealthPayload);
+  resourceApp.get('/actuator/health/liveness', async () => hapiFhirLivenessPayload);
+  resourceApp.get('/actuator/health/readiness', async () => hapiFhirReadinessPayload);
+  resourceApp.get('/fhir/metadata', async () => capabilityStatement);
+  resourceApp.get('/fhir', async () => capabilityStatement);
 
   authApp.post<{ Body: TokenBody; Querystring: { mode?: TokenMode } }>(
     config.auth.tokenEndpoint,
@@ -342,7 +483,7 @@ async function main() {
     },
   );
 
-  async function handleResourceRequest(
+  async function validateProtectedResourceRequest(
     request: {
       headers: Record<string, string | string[] | undefined>;
       query: { skipValidation?: string; validationMode?: ValidationMode };
@@ -351,11 +492,22 @@ async function main() {
     reply: {
       status: (code: number) => { send: (body: unknown) => unknown };
       send: (body: unknown) => unknown;
-    },
-  ) {
+    }
+  ): Promise<{ skippedValidation: boolean } | undefined> {
     const participantTokenPresent = !!firstHeader(request.headers[config.participantHeaderName.toLowerCase()]);
     const accessToken = parseBearerToken(firstHeader(request.headers.authorization));
     const requestPath = new URL(request.url, 'http://placeholder').pathname;
+    const isLegacyPatientPath = requestPath === '/resource/patient';
+    const isFhirPatientPath = requestPath === '/fhir/Patient' || /^\/fhir\/Patient\/[^/]+$/.test(requestPath);
+
+    const isSupportedPath = isLegacyPatientPath || isFhirPatientPath;
+    if (!isSupportedPath) {
+      return reply.status(404).send({
+        message: `Route GET:${requestPath} not found`,
+        error: 'Not Found',
+        statusCode: 404,
+      }) as undefined;
+    }
 
     if (!accessToken) {
       logEvent({
@@ -370,7 +522,7 @@ async function main() {
       return reply.status(401).send({
         error: 'missing_token',
         error_description: 'Authorization: Bearer <token> is required',
-      });
+      }) as undefined;
     }
 
     logEvent({
@@ -395,19 +547,7 @@ async function main() {
         },
       });
 
-      if (requestPath !== '/resource/patient') {
-        return reply.status(404).send({
-          message: `Route GET:${requestPath} not found`,
-          error: 'Not Found',
-          statusCode: 404,
-        });
-      }
-
-      return reply.send({
-        resourceType: 'Patient',
-        id: 'example-patient',
-        validation_skipped: true,
-      });
+      return { skippedValidation: true };
     }
 
     const validationUrl = buildUrl(config.resource.authValidateBaseUrl, config.auth.validateEndpoint);
@@ -460,25 +600,7 @@ async function main() {
         error: 'invalid_token',
         error_description: 'Token validation failed',
         validation_response: validationJson,
-      });
-    }
-
-    if (requestPath !== '/resource/patient') {
-      logEvent({
-        color: 'yellow',
-        label: 'RESOURCE',
-        message: 'resource path not found after successful validation',
-        details: {
-          path: requestPath,
-          token: tokenPreview(accessToken),
-          validationStatus: validationResponse.status,
-        },
-      });
-      return reply.status(404).send({
-        message: `Route GET:${requestPath} not found`,
-        error: 'Not Found',
-        statusCode: 404,
-      });
+      }) as undefined;
     }
 
     logEvent({
@@ -492,27 +614,105 @@ async function main() {
       },
     });
 
-    return reply.send({
-      resourceType: 'Patient',
-      id: 'example-patient',
-      name: [
-        {
-          family: 'Prism',
-          given: ['OAuth', 'Simulator'],
-        },
-      ],
-      active: true,
-    });
+    return { skippedValidation: false };
+  }
+
+  async function handleLegacyPatientRequest(
+    request: {
+      headers: Record<string, string | string[] | undefined>;
+      query: { skipValidation?: string; validationMode?: ValidationMode };
+      url: string;
+    },
+    reply: {
+      status: (code: number) => { send: (body: unknown) => unknown };
+      send: (body: unknown) => unknown;
+    },
+  ) {
+    const validationResult = await validateProtectedResourceRequest(request, reply);
+    if (!validationResult) return;
+
+    const patient = buildPatient('example-patient');
+    if (validationResult.skippedValidation) {
+      return reply.send({
+        ...patient,
+        validation_skipped: true,
+      });
+    }
+
+    return reply.send(patient);
+  }
+
+  async function handleFhirPatientSearch(
+    request: {
+      headers: Record<string, string | string[] | undefined>;
+      query: { skipValidation?: string; validationMode?: ValidationMode } & Record<string, unknown>;
+      url: string;
+    },
+    reply: {
+      status: (code: number) => { send: (body: unknown) => unknown };
+      send: (body: unknown) => unknown;
+    },
+  ) {
+    const validationResult = await validateProtectedResourceRequest(request, reply);
+    if (!validationResult) return;
+
+    const bundle = buildPatientBundle(resourceBaseUrl, request.query);
+    if (validationResult.skippedValidation) {
+      return reply.send({
+        ...bundle,
+        validation_skipped: true,
+      });
+    }
+
+    return reply.send(bundle);
+  }
+
+  async function handleFhirPatientRead(
+    request: {
+      headers: Record<string, string | string[] | undefined>;
+      query: { skipValidation?: string; validationMode?: ValidationMode };
+      url: string;
+      params: { id: string };
+    },
+    reply: {
+      status: (code: number) => { send: (body: unknown) => unknown };
+      send: (body: unknown) => unknown;
+    },
+  ) {
+    const validationResult = await validateProtectedResourceRequest(request, reply);
+    if (!validationResult) return;
+
+    const patient = buildPatient(request.params.id);
+    if (validationResult.skippedValidation) {
+      return reply.send({
+        ...patient,
+        validation_skipped: true,
+      });
+    }
+
+    return reply.send(patient);
   }
 
   resourceApp.get<{ Querystring: { skipValidation?: string; validationMode?: ValidationMode } }>(
     '/resource/patient',
-    async (request, reply) => handleResourceRequest(request, reply),
+    async (request, reply) => handleLegacyPatientRequest(request, reply),
+  );
+  resourceApp.get<{ Querystring: { skipValidation?: string; validationMode?: ValidationMode } & Record<string, unknown> }>(
+    '/fhir/Patient',
+    async (request, reply) => handleFhirPatientSearch(request, reply),
+  );
+  resourceApp.get<{ Params: { id: string }; Querystring: { skipValidation?: string; validationMode?: ValidationMode } }>(
+    '/fhir/Patient/:id',
+    async (request, reply) => handleFhirPatientRead(request, reply),
   );
 
   resourceApp.get<{ Params: { wildcard: string }; Querystring: { skipValidation?: string; validationMode?: ValidationMode } }>(
     '/resource/*',
-    async (request, reply) => handleResourceRequest(request, reply),
+    async (request, reply) => validateProtectedResourceRequest(request, reply),
+  );
+  resourceApp.get<{ Params: { wildcard: string }; Querystring: { skipValidation?: string; validationMode?: ValidationMode } }>(
+    '/fhir/*',
+    async (request, reply) => validateProtectedResourceRequest(request, reply),
   );
 
   await authApp.listen({ host: config.auth.host, port: config.auth.port });

@@ -43,6 +43,22 @@ Use `db:push` for fast local schema sync. Use migrations for controlled deployme
 - `client/src/pages/`: screen-level UI
 - `client/src/components/`: reusable UI pieces
 
+## API Notes
+
+Participant-token APIs are documented separately in [Participant Tokens](participant-tokens.md).
+
+Current routes:
+
+- `POST /api/token/current`
+- `POST /api/token/renew`
+- `POST /api/token/validate`
+
+Preferred API usage is `username/password` in the request body. Legacy authenticated routes remain available for the web UI:
+
+- `GET /api/token`
+- `GET /api/token/current`
+- `POST /api/token/regen`
+
 ## Testing Guidance
 
 - Keep tests next to the code they cover as `*.test.ts`

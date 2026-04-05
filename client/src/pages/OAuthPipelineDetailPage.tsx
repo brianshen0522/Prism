@@ -337,7 +337,6 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                     )}
                   </div>
                 )}
-                {tokenIssue.connection_id && <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>}
               </FlowCard>
               <FlowConnector status={tokenIssue.participant_token_present ? 'ok' : tokenIssue.connection_id ? 'error' : 'missing'} />
               <FlowCard
@@ -368,7 +367,6 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                     <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">Token response unavailable</Badge>
                   )}
                 </div>
-                {tokenIssue.connection_id && <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>}
               </FlowCard>
               <FlowConnector status="missing" dashed />
               <div className="hidden md:block rounded-xl border border-dashed border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20" />
@@ -499,7 +497,6 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                           />
                         )}
                       </div>
-                      <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>
                     </FlowCard>
                     <FlowConnector status={call.participant_token_present ? resourceStatus : 'error'} />
                     <FlowCard
@@ -535,7 +532,6 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                         <div className="flex items-center gap-2 flex-wrap">
                           <StatusBadge ok={call.validation.body_check_passed} trueLabel="Body check passed" falseLabel="Body check failed" />
                         </div>
-                        <p className="mt-3 text-xs text-blue-600">Click to inspect connection</p>
                       </FlowCard>
                     ) : (
                       <FlowCard

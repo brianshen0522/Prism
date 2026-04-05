@@ -26,6 +26,7 @@ Prism combines a Fastify API, a React dashboard, dynamic proxy listeners, WebSoc
 - [Development](docs/development.md)
 - [Deployment](docs/deployment.md)
 - [Database Model](docs/database.md)
+- [Participant Tokens](docs/participant-tokens.md)
 - [OAuth Pipelines](docs/oauth-pipelines.md)
 - [OAuth Simulator](simulators/oauth-simulator/README.md)
 - [Contributor Guide](AGENTS.md)

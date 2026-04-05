@@ -23,6 +23,7 @@ Each `BackendServer` gets its own proxy port. Prism records the request before f
 - User authentication comes from Gazelle-backed login and Prism-issued JWTs.
 - Participant identity on proxied requests is inferred from JWT or participant token header.
 - Backend servers can be classified as `generic`, `authentication`, or `resource`.
+- Prism also exposes participant-token management APIs for current token retrieval, renewal, and validation.
 
 ## OAuth Model
 

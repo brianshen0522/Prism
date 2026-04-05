@@ -432,12 +432,65 @@ export interface ParticipantToken {
   header_name: string;
 }
 
+export interface ParticipantTokenValidation {
+  token: string;
+  valid: boolean;
+  expires_at: string | null;
+  header_name: string;
+  belongs_to_current_user: boolean;
+  reason: 'valid' | 'expired' | 'not_found';
+}
+
+export interface ParticipantTokenCredentials {
+  username: string;
+  password: string;
+}
+
 export function fetchParticipantToken() {
   return json<ParticipantToken>('/token');
 }
 
 export function regenParticipantToken() {
   return json<ParticipantToken>('/token/regen', { method: 'POST' });
+}
+
+export function fetchCurrentParticipantToken() {
+  return json<ParticipantToken>('/token/current');
+}
+
+export function fetchCurrentParticipantTokenWithCredentials(credentials: ParticipantTokenCredentials) {
+  return json<ParticipantToken>('/token/current', {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  });
+}
+
+export function renewParticipantToken() {
+  return json<ParticipantToken>('/token/renew', { method: 'POST' });
+}
+
+export function renewParticipantTokenWithCredentials(credentials: ParticipantTokenCredentials) {
+  return json<ParticipantToken>('/token/renew', {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  });
+}
+
+export function validateParticipantToken(token?: string) {
+  return json<ParticipantTokenValidation>('/token/validate', {
+    method: 'POST',
+    body: JSON.stringify(token ? { token } : {}),
+  });
+}
+
+export function validateParticipantTokenWithCredentials(
+  credentials: ParticipantTokenCredentials,
+  token?: string,
+) {
+  return json<ParticipantTokenValidation>('/token/validate', {
+    method: 'POST',
+    body: JSON.stringify(token ? { ...credentials, token } : credentials),
+  });
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

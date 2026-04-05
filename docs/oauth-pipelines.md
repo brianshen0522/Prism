@@ -38,6 +38,14 @@ The OAuth detail page shows:
 - refresh-token lineage
 - links back to raw connections
 
+## Participant Token Dependency
+
+OAuth legality depends on the participant token carried by client-originated requests.
+
+- The token header name comes from Prism system settings
+- Expired or unlinked participant tokens make a pipeline `illegal`
+- Participant tokens can be managed through the APIs documented in [Participant Tokens](participant-tokens.md)
+
 ## Filters
 
 OAuth mode uses a simpler filter model than raw traffic:

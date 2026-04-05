@@ -11,6 +11,7 @@ import { dashboardRoutes } from './routes/dashboard';
 import { settingsRoutes } from './routes/settings';
 import { oauthRoutes } from './routes/oauth';
 import { setupWebSocket } from './ws/setup';
+import { initializeServerHealth, shutdownServerHealth } from './servers/health';
 
 export async function buildApp() {
   const app = Fastify({
@@ -48,6 +49,14 @@ export async function buildApp() {
   // WebSocket server attached after routes are registered
   app.addHook('onReady', () => {
     setupWebSocket(app.server);
+  });
+
+  app.addHook('onReady', async () => {
+    await initializeServerHealth();
+  });
+
+  app.addHook('onClose', async () => {
+    shutdownServerHealth();
   });
 
   return app;

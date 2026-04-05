@@ -35,6 +35,7 @@ enum OAuthCallerType {
 model BackendServer {
   id                          String               @id @default(uuid())
   name                        String
+  description                 String?
   targetUrl                   String               @map("target_url")
   isHttps                     Boolean              @default(false) @map("is_https")
   sslVerify                   Boolean              @default(true) @map("ssl_verify")
@@ -49,6 +50,16 @@ model BackendServer {
   oauthValidationEndpoint     String?              @map("oauth_validation_endpoint")
   oauthValidationSuccessPath  String?              @default("active") @map("oauth_validation_success_path")
   oauthValidationSuccessValue String?              @default("true") @map("oauth_validation_success_value")
+  targetTestMethod            String?              @default("GET") @map("target_test_method")
+  targetTestTimeoutSeconds    Int?                 @default(10) @map("target_test_timeout_seconds")
+  heartbeatEnabled            Boolean              @default(false) @map("heartbeat_enabled")
+  heartbeatUrl                String?              @map("heartbeat_url")
+  heartbeatPath               String?              @map("heartbeat_path")
+  heartbeatMethod             String?              @default("GET") @map("heartbeat_method")
+  heartbeatIntervalSeconds    Int?                 @default(60) @map("heartbeat_interval_seconds")
+  heartbeatExpectedStatus     Int?                 @default(200) @map("heartbeat_expected_status")
+  heartbeatTimeoutSeconds     Int?                 @default(10) @map("heartbeat_timeout_seconds")
+  heartbeatTlsVerify          Boolean              @default(true) @map("heartbeat_tls_verify")
   connections                 Connection[]
   oauthAuthServer             BackendServer?       @relation("OAuthAuthServer", fields: [oauthAuthServerId], references: [id])
   oauthResourceServers        BackendServer[]      @relation("OAuthAuthServer")
@@ -81,6 +92,8 @@ model Connection {
   durationMs              Int?                     @map("duration_ms")
   createdAt               DateTime                 @default(now()) @map("created_at")
   participantTokenPresent Boolean                  @default(false) @map("participant_token_present")
+  isSystemHeartbeat      Boolean                   @default(false) @map("is_system_heartbeat")
+  heartbeatId            String?                   @map("heartbeat_id")
   accessTokenHash         String?                  @map("access_token_hash")
   accessTokenPreview      String?                  @map("access_token_preview")
   refreshTokenHash        String?                  @map("refresh_token_hash")

@@ -31,7 +31,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
       />
       <div
         className={cn(
-          'relative z-10 w-full max-w-md rounded-lg bg-white shadow-xl mx-4 dark:bg-gray-800',
+          'relative z-10 mx-4 flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800',
           className,
         )}
       >
@@ -44,7 +44,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-6 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">{children}</div>
       </div>
     </div>
   );

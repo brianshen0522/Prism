@@ -4,6 +4,7 @@ import { config } from './config';
 import { buildApp } from './app';
 import { proxyManager } from './proxy/manager';
 import { computeAndEmitDashboardStats, computeAndEmitServerHealth } from './ws/stats';
+import { shutdownServerHealth } from './servers/health';
 
 async function main() {
   const app = await buildApp();
@@ -13,6 +14,7 @@ async function main() {
   const shutdown = async () => {
     app.log.info('Shutting down...');
     for (const t of statsIntervals) clearInterval(t);
+    shutdownServerHealth();
     await proxyManager.shutdown();
     await app.close();
     process.exit(0);

@@ -51,6 +51,17 @@ curl -i \
   http://localhost:4020/resource/patient
 ```
 
+## Suggested Prism Setup for These Scenarios
+
+- authentication server:
+  - target URL: `http://host.docker.internal:4010`
+  - user access URL: `http://host.docker.internal:4010`
+  - heartbeat path: `/health/ready`
+- resource server:
+  - target URL: `http://host.docker.internal:4020`
+  - user access URL: `http://host.docker.internal:4020`
+  - heartbeat path: `/`
+
 ## Traffic Rules
 
 The simulator is aligned with Prism’s pipeline rules:

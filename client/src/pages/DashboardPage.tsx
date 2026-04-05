@@ -7,7 +7,8 @@ import {
 import { Activity, Server, AlertTriangle, Zap } from 'lucide-react';
 import {
   fetchDashboardStats, fetchDashboardChart,
-  type DashboardStats, type ChartData, type ConnectionSummary,
+  fetchOAuthPipelines,
+  type DashboardStats, type ChartData, type ConnectionSummary, type OAuthPipelineListItem,
 } from '../lib/api';
 import { fetchConnections } from '../lib/api';
 import { useWebSocket, type WSMessage } from '../lib/ws';
@@ -106,6 +107,76 @@ function RecentMobileCard({ c }: { c: ConnectionSummary }) {
   );
 }
 
+function pipelineStatusTone(p: OAuthPipelineListItem) {
+  if (p.success) return 'bg-green-100 text-green-800';
+  if (!p.complete || !p.legal) return 'bg-amber-100 text-amber-800';
+  return 'bg-red-100 text-red-800';
+}
+
+function RecentPipelineRow({ pipeline }: { pipeline: OAuthPipelineListItem }) {
+  const navigate = useNavigate();
+  return (
+    <tr
+      className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+      onClick={() => navigate(`/oauth/pipelines/${pipeline.id}`)}
+    >
+      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500">{fmtDate(pipeline.started_at)}</td>
+      <td className="px-4 py-2.5 text-xs text-gray-700 dark:text-gray-300">
+        {pipeline.participant_user?.name || pipeline.participant_user?.username || '—'}
+      </td>
+      <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
+        {pipeline.authentication_server?.name ?? '—'}
+      </td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-[180px] truncate">
+        {pipeline.access_token_fingerprint}
+      </td>
+      <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 text-center">{pipeline.resource_call_count}</td>
+      <td className="px-4 py-2.5">
+        <Badge className={pipelineStatusTone(pipeline)}>
+          {pipeline.success ? 'success' : pipeline.complete ? (pipeline.legal ? 'failed' : 'illegal') : 'incomplete'}
+        </Badge>
+      </td>
+    </tr>
+  );
+}
+
+function RecentPipelineMobileCard({ pipeline }: { pipeline: OAuthPipelineListItem }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/oauth/pipelines/${pipeline.id}`)}
+      className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-gray-400 dark:text-gray-500">{fmtDate(pipeline.started_at)}</p>
+          <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">
+            {pipeline.participant_user?.name || pipeline.participant_user?.username || '—'}
+          </p>
+          <p className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
+            {pipeline.access_token_fingerprint}
+          </p>
+        </div>
+        <Badge className={pipelineStatusTone(pipeline)}>
+          {pipeline.success ? 'success' : pipeline.complete ? (pipeline.legal ? 'failed' : 'illegal') : 'incomplete'}
+        </Badge>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+          {pipeline.resource_call_count} calls
+        </Badge>
+      </div>
+      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        {pipeline.authentication_server?.name ?? '—'}
+      </p>
+      {pipeline.diagnostics_summary ? (
+        <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{pipeline.diagnostics_summary}</p>
+      ) : null}
+    </button>
+  );
+}
+
 // ─── DashboardPage ────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
@@ -128,6 +199,12 @@ export function DashboardPage() {
   const { data: recent, isLoading: recentLoading } = useQuery({
     queryKey: ['connections', 1, '', ''],
     queryFn: () => fetchConnections({ page: 1, limit: 10 }),
+    refetchInterval: 15_000,
+  });
+
+  const { data: recentPipelines, isLoading: recentPipelinesLoading } = useQuery({
+    queryKey: ['dashboard-oauth-pipelines'],
+    queryFn: () => fetchOAuthPipelines({ page: 1, limit: 8 }),
     refetchInterval: 15_000,
   });
 
@@ -269,6 +346,39 @@ export function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
                   {recent.data.map((c) => <RecentRow key={c.id} c={c} />)}
+                </tbody>
+              </table>
+            </>
+          )}
+        </TableScroller>
+      </TableCard>
+
+      <TableCard title="Recent OAuth pipelines">
+        <TableScroller>
+          {recentPipelinesLoading ? (
+            <div className="p-4 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+            </div>
+          ) : !recentPipelines?.data.length ? (
+            <EmptyState title="No OAuth pipelines yet" className="py-10" />
+          ) : (
+            <>
+              <div className="space-y-3 p-4 md:hidden">
+                {recentPipelines.data.map((pipeline) => <RecentPipelineMobileCard key={pipeline.id} pipeline={pipeline} />)}
+              </div>
+              <table className="hidden w-full text-sm md:table">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    <th className="px-4 py-3 font-medium">Started</th>
+                    <th className="px-4 py-3 font-medium">Participant</th>
+                    <th className="px-4 py-3 font-medium">Auth Server</th>
+                    <th className="px-4 py-3 font-medium">Token</th>
+                    <th className="px-4 py-3 font-medium text-center">Calls</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {recentPipelines.data.map((pipeline) => <RecentPipelineRow key={pipeline.id} pipeline={pipeline} />)}
                 </tbody>
               </table>
             </>

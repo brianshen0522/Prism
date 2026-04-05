@@ -132,6 +132,7 @@ export interface ConnectionSummary {
   res_status_code: number | null;
   res_body_size: number | null;
   duration_ms: number | null;
+  is_system_heartbeat: boolean;
 }
 
 export interface ConnectionDetail extends ConnectionSummary {
@@ -167,6 +168,7 @@ export function fetchConnections(params: {
   sq_logic?: 'and' | 'or';
   /** 'all' lets non-privileged users see all traffic (not just their own) */
   scope?: 'mine' | 'all';
+  include_system_heartbeat?: boolean;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
@@ -186,6 +188,7 @@ export function fetchConnections(params: {
   if (params.sq) q.set('sq', params.sq);
   if (params.sq_logic) q.set('sq_logic', params.sq_logic);
   if (params.scope) q.set('scope', params.scope);
+  if (params.include_system_heartbeat) q.set('include_system_heartbeat', 'true');
   if (params.sort) q.set('sort', params.sort);
   if (params.order) q.set('order', params.order);
   return json<ConnectionsPage>(`/connections?${q}`);
@@ -539,6 +542,7 @@ export function fetchDashboardServers() {
 export interface AdminServer {
   id: string;
   name: string;
+  description: string | null;
   target_url: string;
   is_https: boolean;
   ssl_verify: boolean;
@@ -551,13 +555,43 @@ export interface AdminServer {
   oauth_validation_endpoint: string | null;
   oauth_validation_success_path: string | null;
   oauth_validation_success_value: string | null;
+  target_test_method: 'GET' | 'HEAD';
+  target_test_timeout_seconds: number;
+  heartbeat_enabled: boolean;
+  heartbeat_url: string | null;
+  heartbeat_path: string | null;
+  heartbeat_method: 'GET' | 'HEAD';
+  heartbeat_interval_seconds: number;
+  heartbeat_expected_status: number;
+  heartbeat_timeout_seconds: number;
+  heartbeat_tls_verify: boolean;
   created_by: number;
   created_at: string;
   is_running: boolean;
+  backend_status: ProbeStatus;
+  proxy_status: ProbeStatus;
+  backend_history: ProbeHistoryPoint[];
+  proxy_history: ProbeHistoryPoint[];
+}
+
+export interface ProbeStatus {
+  ok: boolean;
+  lamp: 'green' | 'amber' | 'red' | 'gray';
+  checkedAt: string;
+  responseTimeMs: number | null;
+  statusCode: number | null;
+  error: string | null;
+  details?: string | null;
+}
+
+export interface ProbeHistoryPoint {
+  lamp: 'green' | 'amber' | 'red' | 'gray';
+  checkedAt: string;
 }
 
 export interface CreateServerBody {
   name: string;
+  description?: string | null;
   target_url: string;
   is_https?: boolean;
   ssl_verify?: boolean;
@@ -569,10 +603,21 @@ export interface CreateServerBody {
   oauth_validation_endpoint?: string | null;
   oauth_validation_success_path?: string | null;
   oauth_validation_success_value?: string | null;
+  target_test_method?: 'GET' | 'HEAD';
+  target_test_timeout_seconds?: number;
+  heartbeat_enabled?: boolean;
+  heartbeat_url?: string | null;
+  heartbeat_path?: string | null;
+  heartbeat_method?: 'GET' | 'HEAD';
+  heartbeat_interval_seconds?: number;
+  heartbeat_expected_status?: number;
+  heartbeat_timeout_seconds?: number;
+  heartbeat_tls_verify?: boolean;
 }
 
 export interface UpdateServerBody {
   name?: string;
+  description?: string | null;
   target_url?: string;
   is_https?: boolean;
   ssl_verify?: boolean;
@@ -584,6 +629,16 @@ export interface UpdateServerBody {
   oauth_validation_endpoint?: string | null;
   oauth_validation_success_path?: string | null;
   oauth_validation_success_value?: string | null;
+  target_test_method?: 'GET' | 'HEAD';
+  target_test_timeout_seconds?: number;
+  heartbeat_enabled?: boolean;
+  heartbeat_url?: string | null;
+  heartbeat_path?: string | null;
+  heartbeat_method?: 'GET' | 'HEAD';
+  heartbeat_interval_seconds?: number;
+  heartbeat_expected_status?: number;
+  heartbeat_timeout_seconds?: number;
+  heartbeat_tls_verify?: boolean;
 }
 
 export function fetchAdminServers() {
@@ -613,6 +668,28 @@ export function stopServer(id: string) {
 
 export function restartServer(id: string) {
   return json<AdminServer>(`/admin/servers/${id}/restart`, { method: 'POST' });
+}
+
+export function testServerTarget(id: string) {
+  return json<ProbeStatus>(`/admin/servers/${id}/test-target`, { method: 'POST' });
+}
+
+export function testServerHeartbeat(id: string) {
+  return json<ProbeStatus>(`/admin/servers/${id}/test-heartbeat`, { method: 'POST' });
+}
+
+export function testServerHeartbeatDraft(
+  id: string,
+  body: Pick<UpdateServerBody, 'target_url' | 'server_role' | 'oauth_validation_endpoint' | 'heartbeat_enabled' | 'heartbeat_url' | 'heartbeat_path' | 'heartbeat_method' | 'heartbeat_expected_status' | 'heartbeat_timeout_seconds' | 'heartbeat_tls_verify'>,
+) {
+  return json<ProbeStatus>(`/admin/servers/${id}/test-heartbeat-draft`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function testServerTargetDraft(body: Pick<CreateServerBody, 'target_url' | 'ssl_verify' | 'target_test_method' | 'target_test_timeout_seconds'>) {
+  return json<ProbeStatus>('/admin/servers/test-target', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export interface ImportResult {

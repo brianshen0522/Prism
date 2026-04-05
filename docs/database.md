@@ -14,10 +14,13 @@ Represents a proxied upstream service.
 Important fields:
 
 - target URL and proxy port
+- optional description
 - active state
 - optional body size limit
 - server role: `generic`, `authentication`, `resource`
 - OAuth token and validation endpoint settings
+- target test settings
+- heartbeat base URL, heartbeat path, probe expectations, and TLS settings
 
 ### `Connection`
 
@@ -26,6 +29,7 @@ Stores one proxied HTTP exchange.
 Important fields:
 
 - request and response metadata
+- system-heartbeat markers
 - participant-token presence
 - OAuth classification
 - access-token hash / preview

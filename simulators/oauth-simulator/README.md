@@ -11,6 +11,12 @@ It is meant for local testing of raw traffic capture, OAuth pipeline detection, 
 
 - `POST /oauth/token`
 - `POST /oauth/validate`
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /health/started`
+- `GET /realms/master`
+- `GET /realms/master/.well-known/openid-configuration`
+- `GET /admin/realms/master`
 - `GET /resource/patient`
 - a scenario driver for common success and failure cases
 
@@ -43,4 +49,30 @@ Default ports:
 - authentication server: `4010`
 - resource server: `4020`
 
+Keycloak-like health check paths on the authentication server:
+
+- `/health/live`
+- `/health/ready`
+- `/health/started`
+
+Additional Keycloak-like discovery and admin paths:
+
+- `/realms/master`
+- `/realms/master/.well-known/openid-configuration`
+- `/admin/realms/master`
+
+Recommended Prism heartbeat path for the simulated Keycloak server:
+
+- `http://localhost:4010/health/ready`
+
 Use the linked documents for scenario commands, curl examples, and Prism configuration.
+
+## Notes for Prism Heartbeat
+
+When configuring the simulated authentication server inside Prism:
+
+- backend target URL should point to the simulator auth server
+- user access URL can point to the same host for local testing
+- heartbeat path can use `/health/ready`
+
+For non-auth simulator targets, the default heartbeat path can stay `/`.

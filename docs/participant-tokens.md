@@ -45,6 +45,17 @@ Request body:
 }
 ```
 
+Response shape:
+
+```json
+{
+  "token": "9f6d...",
+  "expires_at": "2026-04-05T12:30:00.000Z",
+  "created_at": "2026-04-05T12:00:00.000Z",
+  "header_name": "X-Participant-Token"
+}
+```
+
 ### `POST /api/token/validate`
 
 Checks whether a participant token is valid.
@@ -160,3 +171,7 @@ curl -X POST \
 ## Compatibility Note
 
 Prism still supports Bearer-authenticated token routes for the web UI and older internal flows, but new external integrations should use the username/password examples above.
+
+## UI Note
+
+The `Participant Token` page in the Prism frontend shows these curl examples using the same origin the user is currently visiting. If the page is opened through `http://ip:port`, the examples use that address. If it is opened through an HTTPS domain, the examples use that domain.

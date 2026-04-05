@@ -70,3 +70,10 @@ Preferred API usage is `username/password` in the request body. Legacy authentic
 - Prisma client types must be regenerated after schema changes.
 - If code uses new DB columns, the database must be updated before runtime testing.
 - The OAuth simulator has its own docs under [`simulators/oauth-simulator/`](../simulators/oauth-simulator/README.md).
+- Server config now includes:
+  - optional descriptions
+  - direct target tests
+  - separate backend target and user access URL settings
+  - heartbeat path, method, expected status, interval, timeout, and TLS options
+- Heartbeat traffic is stored as system traffic and is hidden from raw traffic views unless explicitly enabled.
+- Authentication servers default heartbeat path to `/health`; other servers default to `/`.

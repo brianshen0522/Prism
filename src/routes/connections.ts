@@ -41,6 +41,7 @@ function fmtConnection(c: Record<string, unknown>, serverName?: string) {
     res_status_code: c.resStatusCode ?? null,
     res_body_size: c.resBodySize ?? null,
     duration_ms: c.durationMs ?? null,
+    is_system_heartbeat: c.isSystemHeartbeat ?? false,
   };
 }
 
@@ -195,6 +196,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       sq_logic,
       search,
       scope,
+      include_system_heartbeat,
       sort = 'req_timestamp',
       order = 'desc',
     } = req.query as Record<string, string>;
@@ -207,6 +209,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     const baseAnd: Prisma.ConnectionWhereInput[] = [];
     if (!isPrivileged && scope !== 'all') baseAnd.push({ userId: req.user.sub });
+    if (include_system_heartbeat !== 'true') baseAnd.push({ isSystemHeartbeat: false } as any);
 
     const parsedFilters = parseFilterConditions(filters);
     let filterClauses: { logic: 'and' | 'or'; clause: Prisma.ConnectionWhereInput }[] = [];

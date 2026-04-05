@@ -35,6 +35,7 @@ The OAuth detail page shows:
 - summary status
 - swimlane flow map
 - token issue and resource/validation steps
+- connection inspect sidebar for the selected step
 - refresh-token lineage
 - links back to raw connections
 
@@ -56,6 +57,10 @@ OAuth mode uses a simpler filter model than raw traffic:
 - success / failed
 - authentication server
 - resource server
+
+## Dashboard
+
+The dashboard also includes a recent OAuth pipelines section so operators can jump into pipeline detail without opening the traffic pages first.
 
 ## Simulator
 

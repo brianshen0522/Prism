@@ -19,6 +19,7 @@ Prism combines a Fastify API, a React dashboard, dynamic proxy listeners, WebSoc
 - Enforces participant-token visibility rules
 - Tracks OAuth pipelines across authentication and resource servers
 - Supports role-based access for admins, monitors, and users
+- Lets admins test backend reachability and proxy heartbeat health from server configuration
 
 ## Documentation
 
@@ -38,6 +39,14 @@ Prism combines a Fastify API, a React dashboard, dynamic proxy listeners, WebSoc
 - `prisma/`: Prism database schema
 - `prisma-gazelle/`: Gazelle read-only schema
 - `simulators/oauth-simulator/`: local OAuth authentication/resource simulator
+
+## Current UI Highlights
+
+- `Dashboard` shows recent raw connections and recent OAuth pipelines
+- `Global Traffic` supports raw traffic and OAuth pipeline modes
+- `My Connections` supports personal raw traffic and personal OAuth pipelines
+- `Servers` includes role-aware server configuration, target tests, heartbeat checks, and compact status timelines
+- `Participant Token` shows the current token, usage instructions, and API curl examples using the page’s current origin
 
 ## Audience
 

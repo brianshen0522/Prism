@@ -50,3 +50,10 @@ npm run db:generate
 - If PostgreSQL enters recovery mode, Prisma requests will fail until the database is healthy again.
 - OAuth features depend on both correct server-role configuration and current database schema.
 - Admin-only actions such as clearing traffic should be restricted to trusted operators.
+- Heartbeat checks call the final user-facing URL, not just the upstream `target_url`. This is important when an external SSL or engine proxy sits in front of Prism-managed traffic.
+- Server config now separates:
+  - backend target URL
+  - user access URL
+  - heartbeat path
+- Authentication servers default their heartbeat path to `/health`.
+- Other servers default their heartbeat path to `/`.

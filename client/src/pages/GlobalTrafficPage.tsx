@@ -76,7 +76,16 @@ function TrafficRow({ c, isNew, selected, onSelect }: {
       <td className={`sticky left-0 z-10 px-4 py-2.5 text-xs whitespace-nowrap ${selected ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-white dark:bg-gray-900'} text-gray-400 dark:text-gray-500`}>{fmtDate(c.req_timestamp)}</td>
       <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{c.user_id ?? <span className="text-gray-300 dark:text-gray-600">anon</span>}</td>
       <td className="px-4 py-2.5"><Badge className={methodColor(c.req_method)}>{c.req_method}</Badge></td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_url}>{c.req_url}</td>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_url}>
+        <div className="flex items-center gap-2">
+          <span className="truncate">{c.req_url}</span>
+          {c.is_system_heartbeat && (
+            <Badge className="bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+              heartbeat
+            </Badge>
+          )}
+        </div>
+      </td>
       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[100px]">{c.server_name ?? '—'}</td>
       <td className="px-4 py-2.5"><Badge className={statusColor(c.status)}>{c.status}</Badge></td>
       <td className="px-4 py-2.5">
@@ -227,6 +236,7 @@ export function GlobalTrafficPage() {
     const value = searchParams.get('oauth_success');
     return value === 'success' || value === 'failed' ? value : 'all';
   });
+  const [showHeartbeatTraffic, setShowHeartbeatTraffic] = useState(() => searchParams.get('show_heartbeat') === 'true');
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedId(null); };
@@ -246,6 +256,9 @@ export function GlobalTrafficPage() {
 
   useEffect(() => {
     setSearchParams((prev) => {
+      if (showHeartbeatTraffic) prev.set('show_heartbeat', 'true');
+      else prev.delete('show_heartbeat');
+
       if (oauthAccessToken.trim()) prev.set('oauth_access_token', oauthAccessToken.trim());
       else prev.delete('oauth_access_token');
 
@@ -266,7 +279,7 @@ export function GlobalTrafficPage() {
 
       return prev;
     });
-  }, [oauthAccessToken, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
+  }, [showHeartbeatTraffic, oauthAccessToken, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
 
   const view = (searchParams.get('view') ?? 'raw') as 'raw' | 'oauth';
   const sort      = searchParams.get('sort')  ?? 'req_timestamp';
@@ -285,6 +298,7 @@ export function GlobalTrafficPage() {
   const hasActiveFilters =
     requiredConditions.some(isFilterConditionActive) ||
     conditions.some(isFilterConditionActive) ||
+    showHeartbeatTraffic ||
     sort !== 'req_timestamp' || order !== 'desc';
 
   useEffect(() => {
@@ -297,8 +311,10 @@ export function GlobalTrafficPage() {
     setSearchParams((prev) => {
       prev.delete('sort');
       prev.delete('order');
+      prev.delete('show_heartbeat');
       return prev;
     });
+    setShowHeartbeatTraffic(false);
   };
 
   const { data: servers = [] } = useQuery({ queryKey: ['dashboard-servers'], queryFn: fetchDashboardServers });
@@ -325,7 +341,7 @@ export function GlobalTrafficPage() {
 
   const queryKey = [
     'connections-global',
-    filtersString ?? '', sort, order,
+    filtersString ?? '', showHeartbeatTraffic ? 'heartbeat' : 'default', sort, order,
   ];
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isFetching } = useInfiniteQuery({
@@ -333,6 +349,7 @@ export function GlobalTrafficPage() {
     queryFn: ({ pageParam }) => fetchConnections({
       page: pageParam, limit: LIMIT,
       filters: filtersString,
+      include_system_heartbeat: showHeartbeatTraffic,
       sort, order,
     }),
     initialPageParam: 1,
@@ -460,6 +477,19 @@ export function GlobalTrafficPage() {
                 <X className="h-3.5 w-3.5" /> Reset
               </Button>
             )}
+            {view === 'raw' && (
+              <button
+                type="button"
+                onClick={() => setShowHeartbeatTraffic((value) => !value)}
+                className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  showHeartbeatTraffic
+                    ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                }`}
+              >
+                System heartbeat {showHeartbeatTraffic ? 'shown' : 'hidden'}
+              </button>
+            )}
             <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filters
@@ -509,6 +539,18 @@ export function GlobalTrafficPage() {
               onRequiredChange={handleRequiredChange}
               onChange={setConditions}
             />
+            <div className="mt-4 flex items-center gap-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
+              <input
+                id="show_heartbeat_traffic_global"
+                type="checkbox"
+                checked={showHeartbeatTraffic}
+                onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <label htmlFor="show_heartbeat_traffic_global" className="text-gray-700 dark:text-gray-300">
+                Show system heartbeat traffic
+              </label>
+            </div>
           </FilterCard>
         )}
         {view === 'oauth' && (
@@ -627,16 +669,30 @@ export function GlobalTrafficPage() {
           description="Adjust filters and close the sheet to return to the list."
         >
           {view === 'raw' ? (
-            <ConnectionFilterBuilder
-              requiredConditions={requiredConditions}
-              conditions={conditions}
-              serverOptions={serverOptions}
-              statusCodeOptions={statusCodeOptions}
-              userOptions={userOptions}
-              allowUserFilter={isPrivileged}
-              onRequiredChange={handleRequiredChange}
-              onChange={setConditions}
-            />
+            <div className="space-y-4">
+              <ConnectionFilterBuilder
+                requiredConditions={requiredConditions}
+                conditions={conditions}
+                serverOptions={serverOptions}
+                statusCodeOptions={statusCodeOptions}
+                userOptions={userOptions}
+                allowUserFilter={isPrivileged}
+                onRequiredChange={handleRequiredChange}
+                onChange={setConditions}
+              />
+              <div className="flex items-center gap-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
+                <input
+                  id="show_heartbeat_traffic_global_mobile"
+                  type="checkbox"
+                  checked={showHeartbeatTraffic}
+                  onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <label htmlFor="show_heartbeat_traffic_global_mobile" className="text-gray-700 dark:text-gray-300">
+                  Show system heartbeat traffic
+                </label>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3">
               <div>
@@ -753,7 +809,12 @@ export function GlobalTrafficPage() {
                 {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
               ) : !allConnections.length ? (
-              <EmptyState title="No connections match the current filters" />
+              <EmptyState
+                title="No connections match the current filters"
+                description={showHeartbeatTraffic
+                  ? 'No raw traffic matched the current filters, including system heartbeat traffic.'
+                  : 'System heartbeat traffic is currently hidden. Enable it in Filters if you want to inspect heartbeat requests.'}
+              />
               ) : (
                 <>
                   <table className="min-w-[1320px] w-full table-fixed text-sm">

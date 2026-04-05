@@ -71,6 +71,10 @@ function buildUrl(baseUrl: string, path: string): string {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
 
+function realmBaseUrl(host: string, port: number) {
+  return `http://127.0.0.1:${port}`;
+}
+
 function tokenPreview(token: string | null): string {
   if (!token) return 'none';
   if (token.length <= 18) return token;
@@ -98,11 +102,62 @@ function logEvent(input: {
 async function main() {
   const config = loadConfig();
   const store = new TokenStore();
+  const authBaseUrl = realmBaseUrl(config.auth.host, config.auth.port);
+  const realmName = 'master';
 
   const authApp = Fastify({ logger: false });
   const resourceApp = Fastify({ logger: false });
 
+  const keycloakHealthPayload = {
+    status: 'UP',
+    checks: [
+      {
+        name: 'Keycloak database connections async health check',
+        status: 'UP',
+      },
+    ],
+  };
+
   authApp.get('/health', async () => ({ ok: true, role: 'authentication' }));
+  authApp.get('/health/live', async () => ({
+    status: 'UP',
+    checks: [],
+  }));
+  authApp.get('/health/ready', async () => keycloakHealthPayload);
+  authApp.get('/health/started', async () => ({
+    status: 'UP',
+    checks: [],
+  }));
+  authApp.get(`/realms/${realmName}`, async () => ({
+    realm: realmName,
+    public_key: 'simulated-public-key',
+    'token-service': buildUrl(authBaseUrl, config.auth.tokenEndpoint),
+    'account-service': buildUrl(authBaseUrl, `/realms/${realmName}/account`),
+    'tokens-not-before': 0,
+  }));
+  authApp.get(`/realms/${realmName}/.well-known/openid-configuration`, async () => ({
+    issuer: buildUrl(authBaseUrl, `/realms/${realmName}`),
+    authorization_endpoint: buildUrl(authBaseUrl, `/realms/${realmName}/protocol/openid-connect/auth`),
+    token_endpoint: buildUrl(authBaseUrl, config.auth.tokenEndpoint),
+    introspection_endpoint: buildUrl(authBaseUrl, config.auth.validateEndpoint),
+    userinfo_endpoint: buildUrl(authBaseUrl, `/realms/${realmName}/protocol/openid-connect/userinfo`),
+    end_session_endpoint: buildUrl(authBaseUrl, `/realms/${realmName}/protocol/openid-connect/logout`),
+    jwks_uri: buildUrl(authBaseUrl, `/realms/${realmName}/protocol/openid-connect/certs`),
+    grant_types_supported: ['client_credentials', 'refresh_token'],
+    response_types_supported: ['code', 'token'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['RS256'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+  }));
+  authApp.get(`/admin/realms/${realmName}`, async () => ({
+    id: realmName,
+    realm: realmName,
+    displayName: 'Simulated Keycloak Master Realm',
+    enabled: true,
+    sslRequired: 'external',
+    registrationAllowed: false,
+    loginWithEmailAllowed: true,
+  }));
   resourceApp.get('/health', async () => ({ ok: true, role: 'resource' }));
 
   authApp.post<{ Body: TokenBody; Querystring: { mode?: TokenMode } }>(

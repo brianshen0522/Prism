@@ -6,15 +6,30 @@ Use the simulator when you want deterministic OAuth traffic for Prism.
 
 - Role: `authentication`
 - Target URL: `http://host.docker.internal:4010`
+- User access URL: `http://host.docker.internal:4010` for local testing, or the final public URL if another proxy sits in front
 - Token endpoint: `/oauth/token`
 - Validation endpoint: `/oauth/validate`
 - Validation success path: `active`
 - Validation success value: `true`
 
+Optional Keycloak-like endpoints exposed by the simulator:
+
+- Health: `/health/ready`
+- Realm metadata: `/realms/master`
+- OIDC discovery: `/realms/master/.well-known/openid-configuration`
+- Admin realm info: `/admin/realms/master`
+
+Recommended authentication heartbeat settings:
+
+- user access URL: `http://host.docker.internal:4010`
+- heartbeat path: `/health/ready`
+- expected status: `200`
+
 ## Configure the Resource Server in Prism
 
 - Role: `resource`
 - Target URL: `http://host.docker.internal:4020`
+- User access URL: `http://host.docker.internal:4020` for local testing, or the final public URL if another proxy sits in front
 - Optionally associate it with the authentication server above
 
 ## Important Requirement

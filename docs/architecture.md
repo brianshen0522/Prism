@@ -18,6 +18,23 @@ Client -> Prism proxy port -> Backend server
 
 Each `BackendServer` gets its own proxy port. Prism records the request before forwarding it, updates the record when the upstream response returns, and then queues OAuth reconciliation if the traffic matches token issue, resource access, or validation behavior.
 
+Server configuration also supports:
+
+- free-form server descriptions for operators
+- direct backend target tests
+- optional proxy heartbeat checks against the final user-facing URL
+- separate configuration for backend target, user access URL, and heartbeat path
+
+Heartbeat requests are marked as system traffic so operators can distinguish them from participant traffic.
+
+## Major Screens
+
+- `Dashboard` shows both recent raw connections and recent OAuth pipelines.
+- `Global Traffic` switches between raw traffic and OAuth pipeline views.
+- `My Connections` gives each user the same two modes, scoped to their own traffic.
+- `Servers` includes server roles, backend testing, heartbeat testing, and status timelines.
+- `Participant Token` includes token API examples using the same origin the user is currently visiting.
+
 ## Identity and Roles
 
 - User authentication comes from Gazelle-backed login and Prism-issued JWTs.

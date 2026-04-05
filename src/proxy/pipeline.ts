@@ -224,6 +224,14 @@ export async function handleRequest(
   const { userId, username } = await identifyUser(req.headers);
   const participantTokenPresent = await hasParticipantToken(req.headers);
   const sanitizedReqHeaders = sanitizeHeaders(req.headers as Record<string, string | string[]>);
+  const heartbeatIdHeader = Object.entries(sanitizedReqHeaders).find(
+    ([key]) => key.toLowerCase() === 'x-prism-heartbeat-id',
+  );
+  const heartbeatId = typeof heartbeatIdHeader?.[1] === 'string'
+    ? heartbeatIdHeader[1]
+    : Array.isArray(heartbeatIdHeader?.[1]) && typeof heartbeatIdHeader[1][0] === 'string'
+      ? heartbeatIdHeader[1][0]
+      : null;
 
   // Step 3 — Apply body size limit for storage (full body is always forwarded)
   const { body: reqBody, truncated: reqBodyTruncated } = applyBodyLimit(
@@ -246,6 +254,8 @@ export async function handleRequest(
       reqBodySize: reqBodyBuffer.length > 0 ? reqBodyBuffer.length : null,
       reqBodyTruncated,
       participantTokenPresent,
+      isSystemHeartbeat: !!heartbeatId,
+      heartbeatId,
     } as any,
   });
 

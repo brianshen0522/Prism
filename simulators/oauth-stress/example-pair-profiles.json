@@ -1,0 +1,18 @@
+{
+  "KEYCLOAK TEST -> FHIR TEST": {
+    "success_ratio": 50,
+    "failure_ratio": 50,
+    "failure_modes": [
+      "invalid-access-token",
+      "bad-resource-path"
+    ],
+    "failure_weights": {
+      "invalid-access-token": 3,
+      "bad-resource-path": 1
+    },
+    "failure_stages": {
+      "invalid-access-token": "resource",
+      "bad-resource-path": "resource"
+    }
+  }
+}

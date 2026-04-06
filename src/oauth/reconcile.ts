@@ -362,14 +362,43 @@ async function attachValidationToResourceCall(input: {
   server: ServerRecord | null;
   authenticationServerId: string | null | undefined;
 }) {
-  await (prism as any).oAuthPipelineResourceCall.update({
-    where: { id: input.resourceCallId },
-    data: {
-      validationConnectionId: input.validationConnection.id,
-      validationMatched: true,
-      validationSuccess: validationBodyPassed(input.validationConnection, input.server),
-    },
+  const existingValidationOwner = await (prism as any).oAuthPipelineResourceCall.findUnique({
+    where: { validationConnectionId: input.validationConnection.id },
+    select: { id: true, pipelineId: true },
   });
+
+  if (existingValidationOwner) {
+    if (existingValidationOwner.pipelineId !== input.pipelineId) {
+      await recomputePipelineState(existingValidationOwner.pipelineId);
+    }
+    await recomputePipelineState(input.pipelineId);
+    return;
+  }
+
+  try {
+    const updateResult = await (prism as any).oAuthPipelineResourceCall.updateMany({
+      where: {
+        id: input.resourceCallId,
+        validationConnectionId: null,
+      },
+      data: {
+        validationConnectionId: input.validationConnection.id,
+        validationMatched: true,
+        validationSuccess: validationBodyPassed(input.validationConnection, input.server),
+      },
+    });
+
+    if (!updateResult.count) {
+      await recomputePipelineState(input.pipelineId);
+      return;
+    }
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      await recomputePipelineState(input.pipelineId);
+      return;
+    }
+    throw error;
+  }
 
   await (prism as any).oAuthPipeline.update({
     where: { id: input.pipelineId },
@@ -466,6 +495,34 @@ async function recomputePipelineState(pipelineId: string) {
   });
 }
 
+async function createOrFetchPipelineByTokenHash(input: {
+  tokenHash: string;
+  participantUserId: number | null | undefined;
+  authenticationServerId: string | null | undefined;
+  accessTokenPreview: string;
+  issuedAt: Date;
+  tokenIssueConnectionId?: string | null;
+  includeResourceCalls?: boolean;
+}) {
+  try {
+    return await (prism as any).oAuthPipeline.create({
+      data: {
+        participantUserId: input.participantUserId ?? null,
+        authenticationServerId: input.authenticationServerId ?? null,
+        accessTokenHash: input.tokenHash,
+        accessTokenPreview: input.accessTokenPreview,
+        tokenIssueConnectionId: input.tokenIssueConnectionId ?? null,
+        issuedAt: input.issuedAt,
+        lastSeenAt: input.issuedAt,
+      },
+      ...(input.includeResourceCalls ? { include: { resourceCalls: true } } : {}),
+    });
+  } catch (error: any) {
+    if (error?.code !== 'P2002') throw error;
+    return fetchPipelineByTokenHash(input.tokenHash);
+  }
+}
+
 async function upsertTokenIssue(connection: ConnectionRecord, server: ServerRecord) {
   const tokenHash = connection.issuedAccessTokenHash;
   if (!tokenHash) return;
@@ -474,17 +531,15 @@ async function upsertTokenIssue(connection: ConnectionRecord, server: ServerReco
   const existing = await fetchPipelineByTokenHash(tokenHash);
 
   if (!existing) {
-    const created = await (prism as any).oAuthPipeline.create({
-      data: {
-        participantUserId: connection.userId,
-        authenticationServerId: server.id,
-        accessTokenHash: tokenHash,
-        accessTokenPreview: preview,
-        tokenIssueConnectionId: connection.id,
-        issuedAt: connection.reqTimestamp,
-        lastSeenAt: connection.reqTimestamp,
-      },
+    const created = await createOrFetchPipelineByTokenHash({
+      tokenHash,
+      participantUserId: connection.userId,
+      authenticationServerId: server.id,
+      accessTokenPreview: preview,
+      tokenIssueConnectionId: connection.id,
+      issuedAt: connection.reqTimestamp,
     });
+    if (!created) return;
     await recomputePipelineState(created.id);
     return;
   }
@@ -510,17 +565,15 @@ async function upsertResourceCall(connection: ConnectionRecord, server: ServerRe
 
   let pipeline = await fetchPipelineByTokenHash(tokenHash);
   if (!pipeline) {
-    pipeline = await (prism as any).oAuthPipeline.create({
-      data: {
-        participantUserId: connection.userId,
-        authenticationServerId: server.oauthAuthServerId ?? null,
-        accessTokenHash: tokenHash,
-        accessTokenPreview: connection.accessTokenPreview ?? 'unknown',
-        issuedAt: connection.reqTimestamp,
-        lastSeenAt: connection.reqTimestamp,
-      },
-      include: { resourceCalls: true },
+    pipeline = await createOrFetchPipelineByTokenHash({
+      tokenHash,
+      participantUserId: connection.userId,
+      authenticationServerId: server.oauthAuthServerId ?? null,
+      accessTokenPreview: connection.accessTokenPreview ?? 'unknown',
+      issuedAt: connection.reqTimestamp,
+      includeResourceCalls: true,
     });
+    if (!pipeline) return;
   }
 
   const existingCall = await (prism as any).oAuthPipelineResourceCall.findUnique({

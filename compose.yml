@@ -14,6 +14,8 @@ services:
   postgres-prism:
     image: postgres:16
     restart: unless-stopped
+    ports:
+      - "${PROXY_DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${PROXY_DB_NAME:-prism}
       POSTGRES_USER: ${PROXY_DB_USER:-prism}

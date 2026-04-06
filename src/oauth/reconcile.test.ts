@@ -164,6 +164,24 @@ describe('findMatchingValidationCall', () => {
 
     expect(matched).toBeNull();
   });
+
+  it('does not match resource calls that already have a validation attached', () => {
+    const validationTime = new Date('2026-04-04T10:00:20.000Z');
+    const matched = findMatchingValidationCall([
+      {
+        id: 'already-matched',
+        validationConnectionId: 'validation-1',
+        resourceConnection: { reqTimestamp: new Date('2026-04-04T10:00:05.000Z') },
+      },
+      {
+        id: 'free',
+        validationConnectionId: null,
+        resourceConnection: { reqTimestamp: new Date('2026-04-04T10:00:04.000Z') },
+      },
+    ], validationTime);
+
+    expect(matched?.id).toBe('free');
+  });
 });
 
 describe('findValidationForResourceCall', () => {

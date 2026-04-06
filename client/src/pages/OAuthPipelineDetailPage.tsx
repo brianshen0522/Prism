@@ -10,13 +10,20 @@ import { Skeleton } from '../components/ui/skeleton';
 import { ConnectionInspectPanel } from '../components/ConnectionInspectPanel';
 import { cn, fmtDate, httpStatusColor, methodColor } from '../lib/utils';
 
-function StatusBadge({ ok, trueLabel, falseLabel }: {
+function StatusBadge({ ok, trueLabel, falseLabel, falseTone = 'error' }: {
   ok: boolean;
   trueLabel: string;
   falseLabel: string;
+  falseTone?: 'error' | 'warning' | 'neutral';
 }) {
+  const falseClass =
+    falseTone === 'warning'
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+      : falseTone === 'neutral'
+        ? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+        : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
   return (
-    <Badge className={ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+    <Badge className={ok ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : falseClass}>
       {ok ? trueLabel : falseLabel}
     </Badge>
   );
@@ -341,6 +348,7 @@ function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection,
                         ok={tokenIssue.refresh_token_supplied}
                         trueLabel="Refresh token supplied"
                         falseLabel="Refresh token missing"
+                        falseTone="warning"
                       />
                     )}
                     {tokenIssue.participant_token_present && (
@@ -702,7 +710,7 @@ export function OAuthPipelineDetailPage() {
                   <Badge className={token_issue.is_refresh_grant ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}>
                     {token_issue.is_refresh_grant ? 'Refresh grant detected' : 'Refresh token present'}
                   </Badge>
-                  <StatusBadge ok={token_issue.refresh_token_supplied} trueLabel="Refresh token supplied" falseLabel="Refresh token missing" />
+                  <StatusBadge ok={token_issue.refresh_token_supplied} trueLabel="Refresh token supplied" falseLabel="Refresh token missing" falseTone="warning" />
                   <StatusBadge ok={token_issue.refresh_token_rotated} trueLabel="Refresh token rotated" falseLabel="Refresh token not rotated" />
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">

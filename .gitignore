@@ -3,3 +3,4 @@ dist/
 .env
 src/generated/
 *.js.map
+simulators/oauth-stress/report*

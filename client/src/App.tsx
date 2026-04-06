@@ -16,8 +16,10 @@ import { SettingsPage } from './pages/SettingsPage';
 
 function DefaultRedirect() {
   const role = useAuthStore((s) => s.user?.role);
-  const isPrivileged = role === 'admin' || role === 'monitor' || role === 'oauth2';
-  return <Navigate to={isPrivileged ? '/guide' : '/guide'} replace />;
+  if (role === 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Navigate to="/guide" replace />;
 }
 
 export default function App() {

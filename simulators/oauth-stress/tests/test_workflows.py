@@ -20,6 +20,7 @@ class WorkflowHelperTests(unittest.TestCase):
       loop_delay_seconds=0.0,
       resource_path='/default',
       bad_resource_path='/bad-default',
+      resource_calls_per_workflow=2,
       auth_server_filter=None,
       resource_server_filter=None,
       include_direct=True,

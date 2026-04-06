@@ -86,6 +86,10 @@ class ReportCollector:
     self.peak_workflows_in_flight = 0
     self.current_pair_in_flight: Counter[str] = Counter()
     self.peak_pair_in_flight: Counter[str] = Counter()
+    self.current_requests_in_flight = 0
+    self.peak_requests_in_flight = 0
+    self.current_pair_requests_in_flight: Counter[str] = Counter()
+    self.peak_pair_requests_in_flight: Counter[str] = Counter()
 
   def workflow_started(self, pair_name: str) -> None:
     self.current_workflows_in_flight += 1
@@ -100,6 +104,20 @@ class ReportCollector:
       self.current_workflows_in_flight -= 1
     if self.current_pair_in_flight[pair_name] > 0:
       self.current_pair_in_flight[pair_name] -= 1
+
+  def request_started(self, pair_name: str) -> None:
+    self.current_requests_in_flight += 1
+    if self.current_requests_in_flight > self.peak_requests_in_flight:
+      self.peak_requests_in_flight = self.current_requests_in_flight
+    self.current_pair_requests_in_flight[pair_name] += 1
+    if self.current_pair_requests_in_flight[pair_name] > self.peak_pair_requests_in_flight[pair_name]:
+      self.peak_pair_requests_in_flight[pair_name] = self.current_pair_requests_in_flight[pair_name]
+
+  def request_finished(self, pair_name: str) -> None:
+    if self.current_requests_in_flight > 0:
+      self.current_requests_in_flight -= 1
+    if self.current_pair_requests_in_flight[pair_name] > 0:
+      self.current_pair_requests_in_flight[pair_name] -= 1
 
   def record_step(self, step_name: str, ok: bool, latency_ms: float, pair_name: str | None = None) -> None:
     self.step_stats[step_name].record(ok, latency_ms)
@@ -169,6 +187,7 @@ class ReportCollector:
     return (
       f'workflows={self.workflow_attempts} '
       f'peak={self.peak_workflows_in_flight} '
+      f'peak_requests={self.peak_requests_in_flight} '
       f'success={self.workflow_successes} '
       f'failed={self.workflow_failures} '
       f'fail_reasons={dict(self.failure_reasons)} '
@@ -200,6 +219,8 @@ class ReportCollector:
       'workflow_kinds': dict(self.workflow_kinds),
       'peak_workflows_in_flight': self.peak_workflows_in_flight,
       'peak_pair_in_flight': dict(self.peak_pair_in_flight),
+      'peak_requests_in_flight': self.peak_requests_in_flight,
+      'peak_pair_requests_in_flight': dict(self.peak_pair_requests_in_flight),
       'failure_reasons': dict(self.failure_reasons),
       'expected_failure_reasons': dict(self.expected_failure_reasons),
       'unexpected_failure_reasons': dict(self.unexpected_failure_reasons),
@@ -285,6 +306,7 @@ def render_html_report(payload: dict[str, Any]) -> str:
   users_count = config.get('users_count', 0)
   concurrency = config.get('concurrency', 0)
   peak_concurrency = int(results.get('peak_workflows_in_flight', 0) or 0)
+  peak_requests = int(results.get('peak_requests_in_flight', 0) or 0)
   duration_seconds = int(config.get('duration_seconds', 0) or 0)
   ramp_up_seconds = int(config.get('ramp_up_seconds', 0) or 0)
   steady_seconds = max(duration_seconds - ramp_up_seconds, 0)
@@ -770,13 +792,15 @@ def render_html_report(payload: dict[str, Any]) -> str:
         <h1>System capacity report</h1>
         <p>
           The main score below is based only on workflows that were supposed to succeed. Designed failure scenarios are tracked separately,
-          and upstream auth/resource failures are split out so they do not distort the Prism capacity reading.
+          and upstream auth/resource failures are split out so they do not distort the Prism capacity reading. One workflow is a multi-step
+          sequence and may issue multiple requests, including multiple resource calls after refresh.
         </p>
         <div class="metrics">
           {metric_card('Workflow attempts', workflow_attempts, f'{workflow_successes} succeeded / {workflow_failures} failed')}
           {metric_card('System limit score', f'{adjusted_success_rate:.1f}%', f'{success_workflow_successes}/{adjusted_attempts} success workflows passed after excluding {workflow_classification.get("unexpected_upstream_failures", 0)} upstream failures', 'primary')}
           {metric_card('Success-workflow pass rate', f'{raw_success_rate:.1f}%', f'{success_workflow_successes}/{success_workflow_attempts} workflows that were expected to succeed', 'neutral')}
           {metric_card('Peak running workflows', peak_concurrency, 'observed maximum simultaneous workflows')}
+          {metric_card('Peak running requests', peak_requests, 'observed maximum simultaneous HTTP requests across all workflows')}
           {metric_card('OAuth pairs', discovered_pairs, 'discovered from active Prism configuration')}
           {metric_card('Direct servers', discovered_direct, 'included when direct mode is enabled')}
           {metric_card('Designed failures matched', workflow_classification.get('expected_failures', 0), 'failure workflows that failed the way they were supposed to')}
@@ -885,19 +909,21 @@ def render_html_report(payload: dict[str, Any]) -> str:
             <tr>
               <th>Target</th>
               <th>Peak concurrent workflows</th>
+              <th>Peak concurrent requests</th>
             </tr>
           </thead>
           <tbody>{''.join(
             '<tr>'
             f'<td>{esc(name)}</td>'
             f'<td>{num(value)}</td>'
+            f'<td>{num(results.get("peak_pair_requests_in_flight", {}).get(name, 0))}</td>'
             '</tr>'
             for name, value in sorted(
               results.get('peak_pair_in_flight', {}).items(),
               key=lambda item: int(item[1]),
               reverse=True,
             )
-          ) or '<tr><td colspan="2">No concurrency data</td></tr>'}</tbody>
+          ) or '<tr><td colspan="3">No concurrency data</td></tr>'}</tbody>
         </table>
       </section>
 

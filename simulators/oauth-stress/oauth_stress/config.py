@@ -37,6 +37,7 @@ class StressConfig:
   loop_delay_seconds: float
   resource_path: str
   bad_resource_path: str
+  resource_calls_per_workflow: int
   auth_server_filter: str | None
   resource_server_filter: str | None
   include_direct: bool
@@ -102,6 +103,7 @@ def parse_args(argv: list[str] | None = None) -> StressConfig:
   parser.add_argument('--loop-delay', dest='loop_delay_seconds', type=_non_negative_float, default=0.0, help='Optional delay between workflow loops, in seconds.')
   parser.add_argument('--resource-path', type=_path, default='/', help='Path to call on every discovered resource server for success workflows.')
   parser.add_argument('--bad-resource-path', type=_path, default='/__stress_invalid_path__', help='Path to use for bad-resource-path failure workflows.')
+  parser.add_argument('--resource-calls-per-workflow', type=_positive_int, default=2, help='How many resource requests to send per token-bearing workflow phase. Applies to the initial access token and again after refresh when refresh is used.')
   parser.add_argument('--resource-server', dest='resource_server_filter', help='Only test the named resource server.')
   parser.add_argument('--include-direct', action='store_true', help='Also stress direct-access generic servers discovered from Prism.')
   parser.add_argument('--auth-server', dest='auth_server_filter', help='Only test the named authentication server.')
@@ -181,6 +183,7 @@ def parse_args(argv: list[str] | None = None) -> StressConfig:
     loop_delay_seconds=args.loop_delay_seconds,
     resource_path=args.resource_path,
     bad_resource_path=args.bad_resource_path,
+    resource_calls_per_workflow=args.resource_calls_per_workflow,
     auth_server_filter=args.auth_server_filter,
     resource_server_filter=args.resource_server_filter,
     include_direct=args.include_direct,

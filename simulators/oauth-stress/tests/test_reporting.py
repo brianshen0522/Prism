@@ -36,3 +36,12 @@ class ReportingTests(unittest.TestCase):
     self.assertEqual(payload['prism_adjusted']['workflow_attempts'], 2)
     self.assertEqual(payload['prism_adjusted']['workflow_failures'], 1)
     self.assertEqual(payload['prism_adjusted']['workflow_successes'], 1)
+
+  def test_request_peak_tracking_is_reported_separately(self) -> None:
+    collector = ReportCollector()
+    collector.request_started('Auth A -> Resource A')
+    collector.request_started('Auth A -> Resource A')
+    collector.request_finished('Auth A -> Resource A')
+    payload = collector.as_dict()
+    self.assertEqual(payload['peak_requests_in_flight'], 2)
+    self.assertEqual(payload['peak_pair_requests_in_flight']['Auth A -> Resource A'], 2)

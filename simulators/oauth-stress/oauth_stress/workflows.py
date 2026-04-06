@@ -40,6 +40,37 @@ def choose_target_name(target: Union[OAuthPair, DirectServer]) -> str:
   return f'Direct -> {target.name}'
 
 
+async def tracked_post_json(
+  client: StressHttpClient,
+  collector: ReportCollector,
+  pair_name: str,
+  url: str,
+  payload: dict[str, Any],
+  headers: dict[str, str] | None = None,
+  verify: bool = True,
+) -> StepResult:
+  collector.request_started(pair_name)
+  try:
+    return await client.post_json(url, payload, headers=headers, verify=verify)
+  finally:
+    collector.request_finished(pair_name)
+
+
+async def tracked_get(
+  client: StressHttpClient,
+  collector: ReportCollector,
+  pair_name: str,
+  url: str,
+  headers: dict[str, str] | None = None,
+  verify: bool = True,
+) -> StepResult:
+  collector.request_started(pair_name)
+  try:
+    return await client.get(url, headers=headers, verify=verify)
+  finally:
+    collector.request_finished(pair_name)
+
+
 def select_workflow_kind(config: StressConfig, pair_name: str, rng: random.Random) -> tuple[str, FailureMode | None, str | None]:
   success_ratio, failure_ratio, weights_by_mode, stages_by_mode, modes = merged_failure_settings(config, pair_name)
   total = success_ratio + failure_ratio
@@ -146,19 +177,20 @@ async def execute_workflow(
   if not isinstance(access_token, str) or not access_token:
     return _expected_result_for_failure(selection.failure_mode, token_grant, 'missing-access-token')
 
-  resource_result = await call_resource(
-    config,
-    client,
-    selection,
-    collector,
-    participant_header_name,
-    participant_token,
-    access_token,
-  )
-  if selection.workflow_kind == 'failure':
-    return (not resource_result.ok), selection.failure_mode or 'expected-failure'
-  if not resource_result.ok:
-    return False, 'resource-call-failed'
+  for _ in range(config.resource_calls_per_workflow):
+    resource_result = await call_resource(
+      config,
+      client,
+      selection,
+      collector,
+      participant_header_name,
+      participant_token,
+      access_token,
+    )
+    if selection.workflow_kind == 'failure':
+      return (not resource_result.ok), selection.failure_mode or 'expected-failure'
+    if not resource_result.ok:
+      return False, 'resource-call-failed'
 
   if refresh_token and rng.randint(1, 100) <= config.renew_ratio:
     refresh_result = await request_refresh_token(
@@ -172,17 +204,18 @@ async def execute_workflow(
     )
     if refresh_result.ok and refresh_result.payload and isinstance(refresh_result.payload.get('access_token'), str):
       refreshed_access_token = str(refresh_result.payload['access_token'])
-      refreshed_resource = await call_resource(
-        config,
-        client,
-        selection,
-        collector,
-        participant_header_name,
-        participant_token,
-        refreshed_access_token,
-      )
-      if not refreshed_resource.ok:
-        return False, 'refresh-resource-call-failed'
+      for _ in range(config.resource_calls_per_workflow):
+        refreshed_resource = await call_resource(
+          config,
+          client,
+          selection,
+          collector,
+          participant_header_name,
+          participant_token,
+          refreshed_access_token,
+        )
+        if not refreshed_resource.ok:
+          return False, 'refresh-resource-call-failed'
     else:
       return False, 'refresh-token-failed'
 
@@ -196,11 +229,15 @@ async def get_participant_token(
   collector: ReportCollector,
   pair: OAuthPair,
 ) -> StepResult:
-  result = await client.post_json(
+  pair_name = choose_pair_name(pair)
+  result = await tracked_post_json(
+    client,
+    collector,
+    pair_name,
     f'{config.prism_origin}/api/token/current',
     {'username': user.username, 'password': user.password},
   )
-  collector.record_step('participant_token', result.ok, result.latency_ms, choose_pair_name(pair))
+  collector.record_step('participant_token', result.ok, result.latency_ms, pair_name)
   return result
 
 
@@ -212,18 +249,21 @@ async def execute_direct_workflow(
 ) -> tuple[bool, str | None]:
   direct = selection.target
   assert isinstance(direct, DirectServer)
-  participant = await client.post_json(
+  target_name = choose_target_name(direct)
+  participant = await tracked_post_json(
+    client,
+    collector,
+    target_name,
     f'{config.prism_origin}/api/token/current',
     {'username': selection.user.username, 'password': selection.user.password},
   )
-  collector.record_step('participant_token', participant.ok, participant.latency_ms, choose_target_name(direct))
+  collector.record_step('participant_token', participant.ok, participant.latency_ms, target_name)
   if not participant.ok or not participant.payload or not participant.payload.get('token'):
     return False, classify_participant_token_failure(participant)
 
   participant_token = str(participant.payload['token'])
   participant_header_name = str(participant.payload.get('header_name') or 'X-Participant-Token')
   headers = {participant_header_name: participant_token}
-  target_name = choose_target_name(direct)
   resource_path, bad_resource_path = target_paths(config, target_name)
 
   if selection.workflow_kind == 'failure':
@@ -234,7 +274,10 @@ async def execute_direct_workflow(
     elif selection.failure_stage in {'resource', 'both'} and selection.failure_mode == 'bad-resource-path':
       resource_path = bad_resource_path
 
-  result = await client.get(
+  result = await tracked_get(
+    client,
+    collector,
+    target_name,
     urljoin(direct.base_url, resource_path.lstrip('/')),
     headers=headers,
     verify=direct.tls_verify,
@@ -267,13 +310,17 @@ async def request_access_token(
     elif selection.failure_stage in {'token', 'both'} and selection.failure_mode == 'bad-token-grant':
       body = {'grant_type': 'invalid_grant'}
 
-  result = await client.post_json(
+  pair_name = choose_pair_name(selection.pair)
+  result = await tracked_post_json(
+    client,
+    collector,
+    pair_name,
     selection.pair.auth_server.token_endpoint or selection.pair.auth_server.base_url,
     body,
     headers=headers,
     verify=selection.pair.auth_server.tls_verify,
   )
-  collector.record_step('token_request', result.ok, result.latency_ms, choose_pair_name(selection.pair))
+  collector.record_step('token_request', result.ok, result.latency_ms, pair_name)
   return result
 
 
@@ -303,7 +350,10 @@ async def call_resource(
     elif selection.failure_stage in {'resource', 'both'} and selection.failure_mode == 'bad-resource-path':
       resource_path = bad_resource_path
 
-  result = await client.get(
+  result = await tracked_get(
+    client,
+    collector,
+    target_name,
     urljoin(selection.pair.resource_server.base_url, resource_path.lstrip('/')),
     headers=headers,
     verify=selection.pair.resource_server.tls_verify,
@@ -321,7 +371,11 @@ async def request_refresh_token(
   participant_token: str,
   refresh_token: str,
 ) -> StepResult:
-  result = await client.post_json(
+  pair_name = choose_pair_name(selection.pair)
+  result = await tracked_post_json(
+    client,
+    collector,
+    pair_name,
     selection.pair.auth_server.token_endpoint or selection.pair.auth_server.base_url,
     {
       'grant_type': 'refresh_token',
@@ -333,7 +387,7 @@ async def request_refresh_token(
     },
     verify=selection.pair.auth_server.tls_verify,
   )
-  collector.record_step('refresh_token', result.ok, result.latency_ms, choose_pair_name(selection.pair))
+  collector.record_step('refresh_token', result.ok, result.latency_ms, pair_name)
   return result
 
 

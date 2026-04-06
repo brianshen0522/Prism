@@ -52,6 +52,7 @@ def print_dry_run(config: dict, discovery: dict) -> None:
   print(f'  users_count: {config["users_count"]}')
   print(f'  resource_path: {config["resource_path"]}')
   print(f'  bad_resource_path: {config["bad_resource_path"]}')
+  print(f'  resource_calls_per_workflow: {config["resource_calls_per_workflow"]}')
   print('  oauth pairs:')
   for pair in discovery['pairs']:
     print(f'    - {pair["auth_server"]["name"]} -> {pair["resource_server"]["name"]}')
@@ -91,6 +92,7 @@ async def async_main() -> int:
     'loop_delay_seconds': config.loop_delay_seconds,
     'resource_path': config.resource_path,
     'bad_resource_path': config.bad_resource_path,
+    'resource_calls_per_workflow': config.resource_calls_per_workflow,
     'include_direct': config.include_direct,
     'success_ratio': config.success_ratio,
     'failure_ratio': config.failure_ratio,

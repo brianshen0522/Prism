@@ -17,10 +17,17 @@ Each simulated success workflow does this:
 1. call Prism `POST /api/token/current` using `username/password`
 2. get a participant token
 3. request an OAuth access token from the discovered authentication server token endpoint
-4. call the discovered resource server with:
+4. call the discovered resource server one or more times with:
    - `Authorization: Bearer <access_token>`
    - the participant token header
 5. optionally run a refresh-token flow if the auth server returns `refresh_token`
+6. after refresh, call the resource server again one or more times with the refreshed access token
+
+By default, the tool sends `2` resource requests per token-bearing phase. That means a workflow can produce:
+
+- multiple resource requests before refresh
+- multiple resource requests after refresh
+- more than one FHIR/resource-server hit in a single workflow
 
 Failure workflows are also supported. The first version includes:
 
@@ -115,6 +122,7 @@ python main.py \
   --users example-users.json \
   --include-direct \
   --resource-path /fhir/Patient \
+  --resource-calls-per-workflow 3 \
   --pair-profiles example-pair-profiles.json \
   --dry-run
 ```
@@ -133,6 +141,7 @@ python main.py \
   --ramp-up 30 \
   --include-direct \
   --resource-path /fhir/Patient \
+  --resource-calls-per-workflow 3 \
   --success-ratio 80 \
   --failure-ratio 20 \
   --renew-ratio 25 \
@@ -160,6 +169,8 @@ python main.py \
   Success-path resource URL path. Default `/`.
 - `--bad-resource-path`
   Failure-path resource URL path. Default `/__stress_invalid_path__`.
+- `--resource-calls-per-workflow`
+  Number of resource requests to send in each token-bearing phase. Default `2`. If refresh is used, the same count is applied again after refresh.
 - `--resource-server`
   Only test one named resource server.
 - `--include-direct`
@@ -219,6 +230,7 @@ The JSON report includes:
   - token request
   - resource call
   - refresh token
+- peak concurrent workflows and peak concurrent requests
 - p50 / p95 / p99 latency per step
 - category breakdown
   - oauth
@@ -253,6 +265,7 @@ python main.py \
   --users example-users.json \
   --concurrency 20 \
   --duration 120 \
+  --resource-calls-per-workflow 3 \
   --success-ratio 60 \
   --failure-ratio 40 \
   --failure-modes invalid-access-token,bad-resource-path \

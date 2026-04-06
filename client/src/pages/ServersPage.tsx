@@ -1115,18 +1115,18 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
 function ExportMenu() {
   const [open, setOpen] = useState(false);
 
-  const download = async (format: 'json' | 'csv') => {
+  const download = async () => {
     setOpen(false);
     const { useAuthStore } = await import('../store/auth');
     const token = useAuthStore.getState().accessToken;
-    const path = `/api/admin/servers/export${format === 'csv' ? '/csv' : ''}`;
+    const path = '/api/admin/servers/export';
     const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) return;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = format === 'csv' ? 'prism-servers.csv' : 'prism-servers.json';
+    a.download = 'prism-servers.json';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1144,16 +1144,10 @@ function ExportMenu() {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 mt-1 z-20 w-36 rounded-md bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 py-1">
             <button
-              onClick={() => download('json')}
+              onClick={() => download()}
               className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               JSON
-            </button>
-            <button
-              onClick={() => download('csv')}
-              className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              CSV
             </button>
           </div>
         </>

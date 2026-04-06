@@ -116,6 +116,15 @@ When changing server configuration fields:
 3. verify `Servers` page create/edit flows
 4. verify `Test target` and heartbeat behavior if impacted
 
+### System Settings Change
+
+When changing `Settings` page behavior or adding new known setting keys:
+
+1. update frontend hints, ranges, and input behavior
+2. update backend validation in the settings route
+3. verify invalid values are rejected in both UI and API
+4. run `npm run build`
+
 ## Notes
 
 - Prisma client types must be regenerated after schema changes.
@@ -129,3 +138,13 @@ When changing server configuration fields:
   - heartbeat path, method, expected status, interval, timeout, and TLS options
 - Heartbeat traffic is stored as system traffic and is hidden from raw traffic views unless explicitly enabled.
 - Authentication servers default heartbeat path to `/health`; other servers default to `/`.
+- Known system settings now use frontend hints plus backend validation for acceptable ranges and formats.
+- Current built-in validation rules:
+  - `participant_token_header`: letters, numbers, and hyphens only, 1-128 chars
+  - `participant_token_ttl_minutes`: integer, 1-1440
+  - `default_body_size_limit_kb`: integer, 0-1048576
+  - `proxy_request_timeout_ms`: integer, 1000-300000
+  - `dashboard_requests_window_minutes`: integer, 1-1440
+  - `dashboard_chart_hours`: integer, 1-168
+  - `dashboard_chart_bucket_minutes`: integer, 1-1440
+  - `connectathon_name`: 1-120 chars

@@ -409,11 +409,12 @@ describe('Server routes', () => {
       expect(body.exported_by).toBe('admin');
       expect(body.servers).toHaveLength(1);
       expect(body.servers[0]).toMatchObject({
+        export_id: 'server-uuid-1',
         name: 'HAPI FHIR TW',
         target_url: 'https://hapi.fhir.tw/',
         proxy_port: 7001,
       });
-      // IDs should not be in export
+      // Runtime IDs should not be exported as top-level `id`
       expect(body.servers[0].id).toBeUndefined();
     });
 
@@ -426,41 +427,6 @@ describe('Server routes', () => {
         headers: { authorization: adminToken() },
       });
       expect(res.statusCode).toBe(200);
-    });
-  });
-
-  // ── GET /api/admin/servers/export/csv ─────────────────────────────────────
-
-  describe('GET /api/admin/servers/export/csv', () => {
-    it('returns CSV with correct headers and data', async () => {
-      vi.mocked(prism.backendServer.findMany).mockResolvedValue([MOCK_SERVER] as any);
-
-      const res = await app.inject({
-        method: 'GET',
-        url: '/api/admin/servers/export/csv',
-        headers: { authorization: adminToken() },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['content-type']).toContain('text/csv');
-      const lines = res.body.split('\n');
-      expect(lines[0]).toBe('id,name,target_url,is_https,ssl_verify,proxy_port,is_active,body_size_limit_kb,created_by,created_at');
-      expect(lines[1]).toContain('HAPI FHIR TW');
-      expect(lines[1]).toContain('7001');
-    });
-
-    it('quotes CSV cells containing commas', async () => {
-      vi.mocked(prism.backendServer.findMany).mockResolvedValue([
-        { ...MOCK_SERVER, name: 'Server, With Comma' },
-      ] as any);
-
-      const res = await app.inject({
-        method: 'GET',
-        url: '/api/admin/servers/export/csv',
-        headers: { authorization: adminToken() },
-      });
-
-      expect(res.body).toContain('"Server, With Comma"');
     });
   });
 
@@ -528,6 +494,7 @@ describe('Server routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
+      expect(res.json().details.issues).toBeDefined();
     });
 
     it('returns 400 when system field is not Prism', async () => {
@@ -539,6 +506,67 @@ describe('Server routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
+    });
+
+    it('normalizes imported URLs that include a path and returns a warning', async () => {
+      vi.mocked(prism.backendServer.findFirst).mockResolvedValue(null);
+      vi.mocked(prism.backendServer.create).mockResolvedValue(MOCK_SERVER as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/servers/import',
+        headers: { authorization: adminToken() },
+        payload: {
+          export_version: '1.0',
+          system: 'Prism',
+          servers: [
+            {
+              name: 'Imported Server',
+              target_url: 'https://example.org/some/path?x=1',
+              heartbeat_url: 'https://public.example.org/health/live',
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(vi.mocked(prism.backendServer.create).mock.calls[0][0]).toMatchObject({
+        data: expect.objectContaining({
+          targetUrl: 'https://example.org/',
+          heartbeatUrl: 'https://public.example.org/',
+        }),
+      });
+      expect(res.json().warnings[0]).toContain('normalized');
+    });
+
+    it('skips importing an identical server configuration that already exists', async () => {
+      vi.mocked(prism.backendServer.findMany).mockResolvedValue([MOCK_SERVER] as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/servers/import',
+        headers: { authorization: adminToken() },
+        payload: {
+          export_version: '1.0',
+          system: 'Prism',
+          servers: [
+            {
+              name: 'HAPI FHIR TW',
+              target_url: 'https://hapi.fhir.tw/',
+              is_https: true,
+              ssl_verify: true,
+              is_active: true,
+              proxy_port: 7001,
+              export_id: 'server-uuid-1',
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().created).toBe(0);
+      expect(res.json().warnings[0]).toContain('identical server configuration already exists');
+      expect(vi.mocked(prism.backendServer.create)).not.toHaveBeenCalled();
     });
   });
 
@@ -661,6 +689,7 @@ describe('Server routes', () => {
       expect(res.statusCode).toBe(200);
       const exported = res.json().servers[0];
       expect(exported).toMatchObject({
+        export_id: 'hapi-uuid-1',
         name: 'HAPI FHIR TW',
         target_url: 'https://hapi.fhir.tw/',
         is_https: true,

@@ -28,6 +28,74 @@ const strictBackendUrl = z.string().refine(isStrictBackendUrl, {
   message: 'target_url must be an http/https host or IP only, with an optional port',
 });
 
+function isImportCompatibleUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    if (!url.hostname) return false;
+    if (url.username || url.password) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const importCompatibleUrl = z.string().refine(isImportCompatibleUrl, {
+  message: 'must be an http/https URL with a valid host and no credentials',
+});
+
+function formatZodIssues(error: z.ZodError) {
+  return error.issues.map((issue) => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+  }));
+}
+
+function canonicalBaseUrl(value: string) {
+  const url = new URL(value);
+  return `${url.protocol}//${url.host}/`;
+}
+
+function normalizeImportedBaseUrl(value: string, fieldLabel: string) {
+  const url = new URL(value);
+  const normalized = canonicalBaseUrl(value);
+  const changed = url.pathname !== '/' || !!url.search || !!url.hash;
+  return {
+    normalized,
+    warning: changed
+      ? `${fieldLabel} included a path, query, or fragment and was normalized to ${normalized}`
+      : null,
+  };
+}
+
+function importSignature(input: {
+  name: string;
+  description: string | null;
+  targetUrl: string;
+  isHttps: boolean;
+  sslVerify: boolean;
+  isActive: boolean;
+  bodySizeLimitKb: number | null;
+  serverRole: string;
+  oauthTokenEndpoint: string | null;
+  oauthValidationEndpoint: string | null;
+  oauthValidationSuccessPath: string | null;
+  oauthValidationSuccessValue: string | null;
+  targetTestMethod: string;
+  targetTestTimeoutSeconds: number;
+  heartbeatEnabled: boolean;
+  heartbeatUrl: string | null;
+  heartbeatPath: string | null;
+  heartbeatMethod: string;
+  heartbeatIntervalSeconds: number;
+  heartbeatExpectedStatus: number;
+  heartbeatTimeoutSeconds: number;
+  heartbeatTlsVerify: boolean;
+  authRef: string | null;
+}) {
+  return JSON.stringify(input);
+}
+
 function fmt(s: BackendServer & Record<string, any>) {
   const health = getServerHealth(s.id, s.heartbeatEnabled ?? false);
   return {
@@ -145,15 +213,18 @@ const importSchema = z.object({
   system: z.literal('Prism'),
   servers: z.array(
     z.object({
+      export_id: z.string().optional(),
       name: z.string().min(1),
       description: z.string().trim().max(2000).nullable().optional(),
-      target_url: strictBackendUrl,
+      target_url: importCompatibleUrl,
       is_https: z.boolean().default(false),
       ssl_verify: z.boolean().default(true),
       proxy_port: z.number().int().optional(),
+      is_active: z.boolean().optional(),
       body_size_limit_kb: z.number().int().positive().nullable().optional(),
       server_role: z.enum(SERVER_ROLES).default('generic').optional(),
       oauth_auth_server_id: z.string().uuid().nullable().optional(),
+      oauth_auth_server_export_id: z.string().nullable().optional(),
       oauth_token_endpoint: z.string().startsWith('/').nullable().optional(),
       oauth_validation_endpoint: z.string().startsWith('/').nullable().optional(),
       oauth_validation_success_path: z.string().min(1).nullable().optional(),
@@ -161,7 +232,7 @@ const importSchema = z.object({
       target_test_method: z.enum(['GET', 'HEAD']).optional(),
       target_test_timeout_seconds: z.number().int().min(1).max(120).optional(),
       heartbeat_enabled: z.boolean().optional(),
-      heartbeat_url: strictBackendUrl.nullable().optional(),
+      heartbeat_url: importCompatibleUrl.nullable().optional(),
       heartbeat_path: z.string().startsWith('/').nullable().optional(),
       heartbeat_method: z.enum(['GET', 'HEAD']).optional(),
       heartbeat_interval_seconds: z.number().int().min(10).max(86_400).optional(),
@@ -171,61 +242,6 @@ const importSchema = z.object({
     }),
   ),
 });
-
-// ─── CSV serializer ───────────────────────────────────────────────────────────
-
-function csvCell(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  const s = String(v);
-  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toCSV(servers: BackendServer[]): string {
-  const headers = [
-    'id', 'name', 'description', 'target_url', 'is_https', 'ssl_verify',
-    'proxy_port', 'is_active', 'body_size_limit_kb',
-    'server_role', 'oauth_auth_server_id', 'oauth_token_endpoint',
-    'oauth_validation_endpoint', 'oauth_validation_success_path',
-    'oauth_validation_success_value', 'target_test_method',
-    'target_test_timeout_seconds', 'heartbeat_enabled', 'heartbeat_url', 'heartbeat_path',
-    'heartbeat_method', 'heartbeat_interval_seconds', 'heartbeat_expected_status',
-    'heartbeat_timeout_seconds', 'heartbeat_tls_verify', 'created_by', 'created_at',
-  ];
-  const rows = servers.map((s) =>
-    [
-      s.id,
-      s.name,
-      (s as BackendServer & Record<string, any>).description,
-      s.targetUrl,
-      s.isHttps,
-      s.sslVerify,
-      s.proxyPort,
-      s.isActive,
-      s.bodySizeLimitKb,
-      (s as BackendServer & Record<string, any>).serverRole,
-      (s as BackendServer & Record<string, any>).oauthAuthServerId,
-      (s as BackendServer & Record<string, any>).oauthTokenEndpoint,
-      (s as BackendServer & Record<string, any>).oauthValidationEndpoint,
-      (s as BackendServer & Record<string, any>).oauthValidationSuccessPath,
-      (s as BackendServer & Record<string, any>).oauthValidationSuccessValue,
-      (s as BackendServer & Record<string, any>).targetTestMethod,
-      (s as BackendServer & Record<string, any>).targetTestTimeoutSeconds,
-      (s as BackendServer & Record<string, any>).heartbeatEnabled,
-      (s as BackendServer & Record<string, any>).heartbeatUrl,
-      (s as BackendServer & Record<string, any>).heartbeatPath,
-      (s as BackendServer & Record<string, any>).heartbeatMethod,
-      (s as BackendServer & Record<string, any>).heartbeatIntervalSeconds,
-      (s as BackendServer & Record<string, any>).heartbeatExpectedStatus,
-      (s as BackendServer & Record<string, any>).heartbeatTimeoutSeconds,
-      (s as BackendServer & Record<string, any>).heartbeatTlsVerify,
-      s.createdBy,
-      s.createdAt.toISOString(),
-    ]
-      .map(csvCell)
-      .join(','),
-  );
-  return [headers.join(','), ...rows].join('\n');
-}
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
@@ -262,6 +278,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       servers: servers.map((server) => {
         const s = server as BackendServer & Record<string, any>;
         return {
+          export_id: s.id,
           name: s.name,
           description: s.description ?? null,
           target_url: s.targetUrl,
@@ -272,6 +289,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           body_size_limit_kb: s.bodySizeLimitKb,
           server_role: s.serverRole,
           oauth_auth_server_id: s.oauthAuthServerId,
+          oauth_auth_server_export_id: s.oauthAuthServerId,
           oauth_token_endpoint: s.oauthTokenEndpoint,
           oauth_validation_endpoint: s.oauthValidationEndpoint,
           oauth_validation_success_path: s.oauthValidationSuccessPath,
@@ -291,27 +309,104 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     });
   });
 
-  fastify.get('/admin/servers/export/csv', { preHandler: adminOnly }, async (_req, reply) => {
-    const servers = await prism.backendServer.findMany({ orderBy: { proxyPort: 'asc' } });
-    return reply
-      .header('Content-Type', 'text/csv')
-      .header('Content-Disposition', 'attachment; filename="prism-servers.csv"')
-      .send(toCSV(servers));
-  });
-
   // ── POST /api/admin/servers/import ────────────────────────────────────────
 
   fastify.post('/admin/servers/import', { preHandler: adminOnly }, async (request, reply) => {
     const parsed = importSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'Invalid import format', details: parsed.error.flatten() });
+      return reply.status(400).send({
+        error: 'Invalid import format',
+        details: {
+          formErrors: parsed.error.flatten().formErrors,
+          fieldErrors: parsed.error.flatten().fieldErrors,
+          issues: formatZodIssues(parsed.error),
+        },
+      });
     }
 
     const warnings: string[] = [];
-    const created: ReturnType<typeof fmt>[] = [];
+    const created: Array<BackendServer & Record<string, any>> = [];
     const importData = parsed.data as z.infer<typeof importSchema>;
+    const existingServers = (await prism.backendServer.findMany({ orderBy: { proxyPort: 'asc' } })) as Array<BackendServer & Record<string, any>>;
+    const createdByExportId = new Map<string, BackendServer & Record<string, any>>();
+    const seenImportSignatures = new Set<string>();
+    const deferredAuthLinks: Array<{
+      createdServerId: string;
+      serverName: string;
+      authExportId: string;
+    }> = [];
 
     for (const s of importData.servers) {
+      const normalizedTarget = normalizeImportedBaseUrl(s.target_url, `target_url for "${s.name}"`);
+      if (normalizedTarget.warning) warnings.push(normalizedTarget.warning);
+      const normalizedHeartbeat = s.heartbeat_url
+        ? normalizeImportedBaseUrl(s.heartbeat_url, `heartbeat_url for "${s.name}"`)
+        : null;
+      if (normalizedHeartbeat?.warning) warnings.push(normalizedHeartbeat.warning);
+      const authExportId = s.oauth_auth_server_export_id ?? s.oauth_auth_server_id ?? null;
+      const normalizedSignature = importSignature({
+        name: s.name,
+        description: s.description ?? null,
+        targetUrl: normalizedTarget.normalized,
+        isHttps: s.is_https,
+        sslVerify: s.ssl_verify,
+        isActive: s.is_active ?? true,
+        bodySizeLimitKb: s.body_size_limit_kb ?? null,
+        serverRole: s.server_role ?? 'generic',
+        oauthTokenEndpoint: s.oauth_token_endpoint ?? null,
+        oauthValidationEndpoint: s.oauth_validation_endpoint ?? null,
+        oauthValidationSuccessPath: s.oauth_validation_success_path ?? 'active',
+        oauthValidationSuccessValue: s.oauth_validation_success_value ?? 'true',
+        targetTestMethod: s.target_test_method ?? 'GET',
+        targetTestTimeoutSeconds: s.target_test_timeout_seconds ?? 10,
+        heartbeatEnabled: s.heartbeat_enabled ?? false,
+        heartbeatUrl: normalizedHeartbeat?.normalized ?? null,
+        heartbeatPath: s.heartbeat_path ?? null,
+        heartbeatMethod: s.heartbeat_method ?? 'GET',
+        heartbeatIntervalSeconds: s.heartbeat_interval_seconds ?? 60,
+        heartbeatExpectedStatus: s.heartbeat_expected_status ?? 200,
+        heartbeatTimeoutSeconds: s.heartbeat_timeout_seconds ?? 10,
+        heartbeatTlsVerify: s.heartbeat_tls_verify ?? true,
+        authRef: authExportId,
+      });
+
+      if (seenImportSignatures.has(normalizedSignature)) {
+        warnings.push(`Skipped duplicate import entry for "${s.name}" because the same configuration appears more than once in the import file`);
+        continue;
+      }
+      seenImportSignatures.add(normalizedSignature);
+
+      const duplicateExisting = existingServers.find((existing) => importSignature({
+        name: existing.name,
+        description: existing.description ?? null,
+        targetUrl: canonicalBaseUrl(existing.targetUrl),
+        isHttps: existing.isHttps,
+        sslVerify: existing.sslVerify,
+        isActive: existing.isActive,
+        bodySizeLimitKb: existing.bodySizeLimitKb ?? null,
+        serverRole: existing.serverRole,
+        oauthTokenEndpoint: existing.oauthTokenEndpoint ?? null,
+        oauthValidationEndpoint: existing.oauthValidationEndpoint ?? null,
+        oauthValidationSuccessPath: existing.oauthValidationSuccessPath ?? 'active',
+        oauthValidationSuccessValue: existing.oauthValidationSuccessValue ?? 'true',
+        targetTestMethod: existing.targetTestMethod ?? 'GET',
+        targetTestTimeoutSeconds: existing.targetTestTimeoutSeconds ?? 10,
+        heartbeatEnabled: existing.heartbeatEnabled ?? false,
+        heartbeatUrl: existing.heartbeatUrl ? canonicalBaseUrl(existing.heartbeatUrl) : null,
+        heartbeatPath: existing.heartbeatPath ?? null,
+        heartbeatMethod: existing.heartbeatMethod ?? 'GET',
+        heartbeatIntervalSeconds: existing.heartbeatIntervalSeconds ?? 60,
+        heartbeatExpectedStatus: existing.heartbeatExpectedStatus ?? 200,
+        heartbeatTimeoutSeconds: existing.heartbeatTimeoutSeconds ?? 10,
+        heartbeatTlsVerify: existing.heartbeatTlsVerify ?? true,
+        authRef: existing.oauthAuthServerId ?? null,
+      }) === normalizedSignature);
+
+      if (duplicateExisting) {
+        warnings.push(`Skipped "${s.name}" because an identical server configuration already exists`);
+        continue;
+      }
+
       let port = s.proxy_port;
 
       if (port !== undefined) {
@@ -329,14 +424,14 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           name: s.name,
           description: s.description ?? null,
-          targetUrl: s.target_url,
+          targetUrl: normalizedTarget.normalized,
           isHttps: s.is_https,
           sslVerify: s.ssl_verify,
           proxyPort: port,
-          isActive: true,
+          isActive: s.is_active ?? true,
           bodySizeLimitKb: s.body_size_limit_kb ?? null,
           serverRole: s.server_role ?? 'generic',
-          oauthAuthServerId: s.oauth_auth_server_id ?? null,
+          oauthAuthServerId: null,
           oauthTokenEndpoint: s.oauth_token_endpoint ?? null,
           oauthValidationEndpoint: s.oauth_validation_endpoint ?? null,
           oauthValidationSuccessPath: s.oauth_validation_success_path ?? 'active',
@@ -344,7 +439,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           targetTestMethod: s.target_test_method ?? 'GET',
           targetTestTimeoutSeconds: s.target_test_timeout_seconds ?? 10,
           heartbeatEnabled: s.heartbeat_enabled ?? false,
-          heartbeatUrl: s.heartbeat_url ?? null,
+          heartbeatUrl: normalizedHeartbeat?.normalized ?? null,
           heartbeatPath: s.heartbeat_path ?? null,
           heartbeatMethod: s.heartbeat_method ?? 'GET',
           heartbeatIntervalSeconds: s.heartbeat_interval_seconds ?? 60,
@@ -355,17 +450,51 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         } as any,
       });
 
-      try {
-        await proxyManager.start(server);
-      } catch (err) {
-        await prism.backendServer.update({ where: { id: server.id }, data: { isActive: false } });
-        warnings.push(`Server "${s.name}" created but listener failed: ${(err as Error).message}`);
+      const exportId = s.export_id ?? null;
+      if (exportId) {
+        createdByExportId.set(exportId, server as BackendServer & Record<string, any>);
       }
 
-      created.push(fmt(server));
+      if (authExportId) {
+        deferredAuthLinks.push({
+          createdServerId: server.id,
+          serverName: s.name,
+          authExportId,
+        });
+      }
+
+      if (s.is_active ?? true) {
+        try {
+          await proxyManager.start(server);
+        } catch (err) {
+          await prism.backendServer.update({ where: { id: server.id }, data: { isActive: false } });
+          warnings.push(`Server "${s.name}" created but listener failed: ${(err as Error).message}`);
+        }
+      }
+
+      created.push(server as BackendServer & Record<string, any>);
+      existingServers.push(server as BackendServer & Record<string, any>);
     }
 
-    return reply.status(201).send({ created: created.length, warnings, servers: created });
+    for (const link of deferredAuthLinks) {
+      const authServer = createdByExportId.get(link.authExportId);
+      if (!authServer) {
+        warnings.push(`Authentication server link for "${link.serverName}" could not be restored from import data`);
+        continue;
+      }
+
+      await prism.backendServer.update({
+        where: { id: link.createdServerId },
+        data: { oauthAuthServerId: authServer.id } as any,
+      });
+    }
+
+    const refreshed = await prism.backendServer.findMany({
+      where: { id: { in: created.map((server) => server.id) } },
+      orderBy: { proxyPort: 'asc' },
+    });
+
+    return reply.status(201).send({ created: refreshed.length, warnings, servers: refreshed.map(fmt) });
   });
 
   // ── GET /api/admin/servers — list all (admin) ─────────────────────────────

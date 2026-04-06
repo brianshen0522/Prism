@@ -82,6 +82,26 @@ This is the bridge between:
 - `ParticipantToken`: anti-cheat token per user
 - `SystemSetting`: runtime configuration
 
+### `SystemSetting`
+
+`SystemSetting` stores runtime configuration that the UI and backend both rely on.
+
+Examples include:
+
+- participant token header name
+- participant token TTL
+- default body storage limit
+- proxy timeout
+- dashboard window and chart settings
+- connectathon display name
+
+Known settings now use:
+
+- frontend hints and range guidance in `Settings`
+- backend validation in the settings route
+
+This prevents invalid values from being silently accepted for important operational settings.
+
 ## Relationship Overview
 
 ```text

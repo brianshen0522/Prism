@@ -12,15 +12,64 @@ import { fmtDate } from '../lib/utils';
 // ─── Predefined setting suggestions ──────────────────────────────────────────
 
 const SUGGESTIONS = [
-  { key: 'participant_token_header', label: 'Participant token header name', hint: 'Header participants must include in requests. Default: X-Participant-Token' },
-  { key: 'participant_token_ttl_minutes', label: 'Participant token TTL (minutes)', hint: 'How often participant tokens rotate. Default: 5' },
-  { key: 'default_body_size_limit_kb', label: 'Default body storage limit (KB)', hint: 'Applied to new servers. 0 = unlimited.' },
-  { key: 'proxy_request_timeout_ms', label: 'Proxy request timeout (ms)', hint: 'Max time to wait for target. Default: 30000.' },
-  { key: 'dashboard_requests_window_minutes', label: 'Dashboard requests window (minutes)', hint: 'Time window for the Requests and Error Rate stat cards. Default: 5.' },
-  { key: 'dashboard_chart_hours', label: 'Dashboard chart window (hours)', hint: 'How many hours of history the traffic chart covers. Default: 24.' },
-  { key: 'dashboard_chart_bucket_minutes', label: 'Dashboard chart bucket size (minutes)', hint: 'Granularity of each bar in the traffic chart. E.g. 10, 30, 60, 120. Default: 60.' },
-  { key: 'connectathon_name', label: 'Connectathon name', hint: 'Displayed in the UI header.' },
+  { key: 'participant_token_header', label: 'Participant token header name', hint: 'Header participants must include in requests. Default: X-Participant-Token', range: 'Letters, numbers, hyphens only. 1-128 chars.', placeholder: 'X-Participant-Token', type: 'text' },
+  { key: 'participant_token_ttl_minutes', label: 'Participant token TTL (minutes)', hint: 'How often participant tokens rotate. Default: 5.', range: 'Integer between 1 and 1440.', placeholder: '5', type: 'number' },
+  { key: 'default_body_size_limit_kb', label: 'Default body storage limit (KB)', hint: 'Applied to new servers. 0 = unlimited.', range: 'Integer between 0 and 1048576.', placeholder: '0', type: 'number' },
+  { key: 'proxy_request_timeout_ms', label: 'Proxy request timeout (ms)', hint: 'Max time to wait for target. Default: 30000.', range: 'Integer between 1000 and 300000.', placeholder: '30000', type: 'number' },
+  { key: 'dashboard_requests_window_minutes', label: 'Dashboard requests window (minutes)', hint: 'Time window for the Requests and Error Rate stat cards. Default: 5.', range: 'Integer between 1 and 1440.', placeholder: '5', type: 'number' },
+  { key: 'dashboard_chart_hours', label: 'Dashboard chart window (hours)', hint: 'How many hours of history the traffic chart covers. Default: 24.', range: 'Integer between 1 and 168.', placeholder: '24', type: 'number' },
+  { key: 'dashboard_chart_bucket_minutes', label: 'Dashboard chart bucket size (minutes)', hint: 'Granularity of each bar in the traffic chart. E.g. 10, 30, 60, 120. Default: 60.', range: 'Integer between 1 and 1440.', placeholder: '60', type: 'number' },
+  { key: 'connectathon_name', label: 'Connectathon name', hint: 'Displayed in the UI header.', range: '1-120 characters.', placeholder: 'IHE Connectathon', type: 'text' },
 ];
+
+function getSuggestion(key: string) {
+  return SUGGESTIONS.find((s) => s.key === key);
+}
+
+function validateSettingValue(key: string, value: string): string | null {
+  const trimmed = value.trim();
+
+  switch (key) {
+    case 'participant_token_header':
+      if (!trimmed) return 'Cannot be empty.';
+      if (!/^[A-Za-z0-9-]+$/.test(trimmed)) return 'Use only letters, numbers, and hyphens.';
+      if (trimmed.length > 128) return 'Must be 128 characters or fewer.';
+      return null;
+    case 'participant_token_ttl_minutes':
+      return validateIntegerRange(trimmed, 1, 1440);
+    case 'default_body_size_limit_kb':
+      return validateIntegerRange(trimmed, 0, 1048576);
+    case 'proxy_request_timeout_ms':
+      return validateIntegerRange(trimmed, 1000, 300000);
+    case 'dashboard_requests_window_minutes':
+      return validateIntegerRange(trimmed, 1, 1440);
+    case 'dashboard_chart_hours':
+      return validateIntegerRange(trimmed, 1, 168);
+    case 'dashboard_chart_bucket_minutes':
+      return validateIntegerRange(trimmed, 1, 1440);
+    case 'connectathon_name':
+      if (!trimmed) return 'Cannot be empty.';
+      if (trimmed.length > 120) return 'Must be 120 characters or fewer.';
+      return null;
+    default:
+      return null;
+  }
+}
+
+function validateIntegerRange(value: string, min: number, max: number): string | null {
+  const n = Number(value);
+  if (!Number.isInteger(n)) return 'Must be an integer.';
+  if (n < min || n > max) return `Must be between ${min} and ${max}.`;
+  return null;
+}
+
+function buildInputProps(settingKey: string) {
+  const suggestion = getSuggestion(settingKey);
+  if (suggestion?.type === 'number') {
+    return { inputMode: 'numeric' as const, pattern: '[0-9]*', placeholder: suggestion.placeholder };
+  }
+  return { placeholder: suggestion?.placeholder ?? 'value' };
+}
 
 // ─── Inline editable row ──────────────────────────────────────────────────────
 
@@ -40,32 +89,39 @@ function SettingRow({ setting }: { setting: Setting }) {
   });
 
   const suggestion = SUGGESTIONS.find((s) => s.key === setting.key);
+  const validationError = validateSettingValue(setting.key, draft);
+  const inputProps = buildInputProps(setting.key);
 
   return (
     <tr className="group hover:bg-gray-50 dark:hover:bg-gray-700">
       <td className="px-4 py-3 align-top">
         <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{setting.key}</p>
         {suggestion && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{suggestion.hint}</p>}
+        {suggestion?.range && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{suggestion.range}</p>}
       </td>
       <td className="px-4 py-3 align-top">
         {editing ? (
-          <div className="flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
             <Input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               autoFocus
               className="h-7 text-xs py-1"
+              {...inputProps}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') saveMut.mutate();
+                if (e.key === 'Enter' && !validationError) saveMut.mutate();
                 if (e.key === 'Escape') { setEditing(false); setDraft(setting.value); }
               }}
             />
-            <Button variant="ghost" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+            <Button variant="ghost" size="sm" loading={saveMut.isPending} disabled={!!validationError} onClick={() => saveMut.mutate()}>
               <Check className="h-3.5 w-3.5 text-green-600" />
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(setting.value); }}>
               <X className="h-3.5 w-3.5 text-gray-400" />
             </Button>
+          </div>
+            {validationError ? <p className="text-xs text-red-600 dark:text-red-400">{validationError}</p> : null}
           </div>
         ) : (
           <span className="font-mono text-sm text-gray-800 dark:text-gray-200">{setting.value}</span>
@@ -97,6 +153,9 @@ function AddSettingRow({ onCancel, initialKey = '' }: { onCancel: () => void; in
   const qc = useQueryClient();
   const [key, setKey] = useState(initialKey);
   const [value, setValue] = useState('');
+  const validationError = validateSettingValue(key, value);
+  const inputProps = buildInputProps(key);
+  const suggestion = getSuggestion(key);
 
   const mut = useMutation({
     mutationFn: () => upsertSetting(key.trim(), value),
@@ -119,18 +178,22 @@ function AddSettingRow({ onCancel, initialKey = '' }: { onCancel: () => void; in
         </datalist>
       </td>
       <td className="px-4 py-3">
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="value"
-          className="h-7 text-xs py-1"
-          onKeyDown={(e) => { if (e.key === 'Enter' && key.trim()) mut.mutate(); if (e.key === 'Escape') onCancel(); }}
-        />
+        <div className="space-y-2">
+          <Input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="h-7 text-xs py-1"
+            {...inputProps}
+            onKeyDown={(e) => { if (e.key === 'Enter' && key.trim() && !validationError) mut.mutate(); if (e.key === 'Escape') onCancel(); }}
+          />
+          {suggestion?.range && <p className="text-xs text-amber-600 dark:text-amber-400">{suggestion.range}</p>}
+          {validationError ? <p className="text-xs text-red-600 dark:text-red-400">{validationError}</p> : null}
+        </div>
       </td>
       <td className="px-4 py-3" />
       <td className="px-4 py-3 text-right">
         <div className="flex items-center gap-1 justify-end">
-          <Button variant="ghost" size="sm" loading={mut.isPending} disabled={!key.trim()} onClick={() => mut.mutate()}>
+          <Button variant="ghost" size="sm" loading={mut.isPending} disabled={!key.trim() || !!validationError} onClick={() => mut.mutate()}>
             <Check className="h-3.5 w-3.5 text-green-600" />
           </Button>
           <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -146,6 +209,9 @@ function AddSettingMobileCard({ onCancel, initialKey = '' }: { onCancel: () => v
   const qc = useQueryClient();
   const [key, setKey] = useState(initialKey);
   const [value, setValue] = useState('');
+  const validationError = validateSettingValue(key, value);
+  const inputProps = buildInputProps(key);
+  const suggestion = getSuggestion(key);
 
   const mut = useMutation({
     mutationFn: () => upsertSetting(key.trim(), value),
@@ -169,11 +235,13 @@ function AddSettingMobileCard({ onCancel, initialKey = '' }: { onCancel: () => v
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="value"
-          onKeyDown={(e) => { if (e.key === 'Enter' && key.trim()) mut.mutate(); if (e.key === 'Escape') onCancel(); }}
+          {...inputProps}
+          onKeyDown={(e) => { if (e.key === 'Enter' && key.trim() && !validationError) mut.mutate(); if (e.key === 'Escape') onCancel(); }}
         />
+        {suggestion?.range && <p className="text-xs text-amber-600 dark:text-amber-400">{suggestion.range}</p>}
+        {validationError ? <p className="text-xs text-red-600 dark:text-red-400">{validationError}</p> : null}
         <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" loading={mut.isPending} disabled={!key.trim()} onClick={() => mut.mutate()}>
+          <Button variant="ghost" size="sm" loading={mut.isPending} disabled={!key.trim() || !!validationError} onClick={() => mut.mutate()}>
             <Check className="h-3.5 w-3.5 text-green-600" />
           </Button>
           <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -201,12 +269,15 @@ function SettingMobileCard({ setting }: { setting: Setting }) {
   });
 
   const suggestion = SUGGESTIONS.find((s) => s.key === setting.key);
+  const validationError = validateSettingValue(setting.key, draft);
+  const inputProps = buildInputProps(setting.key);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
       <div className="space-y-1">
         <p className="font-mono text-xs text-gray-700 dark:text-gray-300">{setting.key}</p>
         {suggestion && <p className="text-xs text-gray-400 dark:text-gray-500">{suggestion.hint}</p>}
+        {suggestion?.range && <p className="text-xs text-amber-600 dark:text-amber-400">{suggestion.range}</p>}
       </div>
 
       <div className="mt-3">
@@ -217,9 +288,11 @@ function SettingMobileCard({ setting }: { setting: Setting }) {
               onChange={(e) => setDraft(e.target.value)}
               autoFocus
               className="text-sm"
+              {...inputProps}
             />
+            {validationError ? <p className="text-xs text-red-600 dark:text-red-400">{validationError}</p> : null}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+              <Button variant="ghost" size="sm" loading={saveMut.isPending} disabled={!!validationError} onClick={() => saveMut.mutate()}>
                 <Check className="h-3.5 w-3.5 text-green-600" />
               </Button>
               <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(setting.value); }}>

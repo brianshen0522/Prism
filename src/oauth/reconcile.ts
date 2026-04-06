@@ -140,6 +140,15 @@ function buildRefreshChainItem(pipeline: any) {
   };
 }
 
+const PIPELINE_CHAIN_INCLUDE = {
+  authenticationServer: true,
+  tokenIssueConnection: {
+    select: {
+      reqBody: true,
+    },
+  },
+} as const;
+
 async function findRefreshChain(input: {
   pipelineId: string;
   authenticationServerId: string | null;
@@ -155,53 +164,37 @@ async function findRefreshChain(input: {
     };
   }
 
-  const candidates = await (prism as any).oAuthPipeline.findMany({
-    where: {
-      id: { not: input.pipelineId },
-      ...(input.authenticationServerId ? { authenticationServerId: input.authenticationServerId } : {}),
-      tokenIssueConnectionId: { not: null },
-    },
-    include: {
-      authenticationServer: true,
-      tokenIssueConnection: true,
-    },
-    orderBy: {
-      issuedAt: 'asc',
-    },
-  });
+  const authFilter = input.authenticationServerId ? { authenticationServerId: input.authenticationServerId } : {};
 
-  let previousPipeline: ReturnType<typeof buildRefreshChainItem> | null = null;
-  const nextPipelines: Array<ReturnType<typeof buildRefreshChainItem>> = [];
+  // Find the pipeline that issued the refresh token we are consuming (our parent).
+  const previousPipelineResult = input.suppliedRefreshTokenHash
+    ? await (prism as any).oAuthPipeline.findFirst({
+      where: {
+        id: { not: input.pipelineId },
+        ...authFilter,
+        tokenIssueConnection: { is: { issuedRefreshTokenHash: input.suppliedRefreshTokenHash } },
+      },
+      include: PIPELINE_CHAIN_INCLUDE,
+      orderBy: { issuedAt: 'asc' },
+    })
+    : null;
 
-  for (const candidate of candidates) {
-    const candidateIssuedRefreshTokenHash = candidate.tokenIssueConnection?.issuedRefreshTokenHash ?? null;
-    const candidateSuppliedRefreshTokenHash = candidate.tokenIssueConnection?.refreshTokenHash ?? null;
-    const candidateIssuedRefreshToken = candidate.tokenIssueConnection?.issuedRefreshTokenPreview
-      ? null
-      : extractRefreshTokenForDisplay(candidate.tokenIssueConnection?.resBody);
-    const candidateSuppliedRefreshToken = candidate.tokenIssueConnection?.refreshTokenPreview
-      ? null
-      : extractRefreshTokenForDisplay(candidate.tokenIssueConnection?.reqBody);
-
-    if (
-      ((input.suppliedRefreshTokenHash && candidateIssuedRefreshTokenHash === input.suppliedRefreshTokenHash) ||
-        (input.suppliedRefreshToken && candidateIssuedRefreshToken === input.suppliedRefreshToken)) &&
-      !previousPipeline
-    ) {
-      previousPipeline = buildRefreshChainItem(candidate);
-    }
-
-    if (
-      (input.issuedRefreshTokenHash && candidateSuppliedRefreshTokenHash === input.issuedRefreshTokenHash) ||
-      (input.issuedRefreshToken && candidateSuppliedRefreshToken === input.issuedRefreshToken)
-    ) {
-      nextPipelines.push(buildRefreshChainItem(candidate));
-    }
-  }
+  // Find pipelines that consumed the refresh token we issued (our children).
+  const nextPipelinesResult = input.issuedRefreshTokenHash
+    ? await (prism as any).oAuthPipeline.findMany({
+      where: {
+        id: { not: input.pipelineId },
+        ...authFilter,
+        tokenIssueConnection: { is: { refreshTokenHash: input.issuedRefreshTokenHash } },
+      },
+      include: PIPELINE_CHAIN_INCLUDE,
+      orderBy: { issuedAt: 'asc' },
+    })
+    : [];
 
   return {
-    previous_pipeline: previousPipeline,
-    next_pipelines: nextPipelines,
+    previous_pipeline: previousPipelineResult ? buildRefreshChainItem(previousPipelineResult) : null,
+    next_pipelines: (nextPipelinesResult as any[]).map(buildRefreshChainItem),
   };
 }
 
@@ -310,7 +303,7 @@ export function findMatchingValidationCall<T extends {
       return resourceTime <= validationTs && validationTs - resourceTime <= VALIDATION_MATCH_WINDOW_MS;
     })
     .sort((a, b) =>
-      new Date(b.resourceConnection.reqTimestamp).getTime() - new Date(a.resourceConnection.reqTimestamp).getTime(),
+      new Date(a.resourceConnection.reqTimestamp).getTime() - new Date(b.resourceConnection.reqTimestamp).getTime(),
     )[0] ?? null;
 }
 

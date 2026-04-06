@@ -1,9 +1,12 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../plugins/authenticate';
+import { requireRole } from '../plugins/authorize';
+import { prism } from '../db/prism';
 import {
   buildOAuthFilterOptions,
   buildOAuthPipelineDetail,
   buildOAuthPipelineList,
+  reconcileOAuthPipeline,
 } from '../oauth/reconcile';
 
 function parseCsvValues(input?: string) {
@@ -54,6 +57,30 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
       page: pageNum,
       limit: limitNum,
     });
+  });
+
+  // Re-run reconciliation for all orphaned validation connections (admin only)
+  fastify.post('/oauth/rereconcile', { preHandler: [authenticate, requireRole('admin')] }, async (_request, reply) => {
+    const orphans = await (prism as any).connection.findMany({
+      where: {
+        connectionKind: 'oauth_validation',
+        status: 'completed',
+        oauthValidationCall: { is: null },
+      },
+      select: { id: true },
+    });
+
+    let reconciled = 0;
+    for (const { id } of orphans) {
+      try {
+        await reconcileOAuthPipeline(id);
+        reconciled++;
+      } catch {
+        // best-effort
+      }
+    }
+
+    return reply.send({ orphans_found: orphans.length, reconciled });
   });
 
   fastify.get('/oauth/pipelines/:id', { preHandler: [authenticate] }, async (request, reply) => {

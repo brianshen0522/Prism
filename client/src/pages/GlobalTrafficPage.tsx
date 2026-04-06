@@ -360,11 +360,14 @@ export function GlobalTrafficPage() {
   });
 
   const {
-    data: oauthPipelines,
+    data: oauthData,
     isLoading: oauthLoading,
+    isFetchingNextPage: oauthFetchingNextPage,
+    hasNextPage: oauthHasNextPage,
+    fetchNextPage: oauthFetchNextPage,
     refetch: refetchOAuth,
     isFetching: oauthFetching,
-  } = useQuery({
+  } = useInfiniteQuery({
     queryKey: [
       'oauth-pipelines',
       debouncedOauthAccessToken,
@@ -374,8 +377,8 @@ export function GlobalTrafficPage() {
       oauthLegal,
       oauthSuccess,
     ],
-    queryFn: () => fetchOAuthPipelines({
-      page: 1,
+    queryFn: ({ pageParam }) => fetchOAuthPipelines({
+      page: pageParam,
       limit: LIMIT,
       access_token: debouncedOauthAccessToken || undefined,
       participant_user_id: oauthParticipantUserIds,
@@ -384,22 +387,33 @@ export function GlobalTrafficPage() {
       legal: oauthLegal,
       success: oauthSuccess,
     }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.data.length, 0);
+      return loaded < lastPage.total ? allPages.length + 1 : undefined;
+    },
     enabled: view === 'oauth',
   });
 
   const allConnections = data?.pages.flatMap(p => p.data) ?? [];
   const total = data?.pages[0]?.total ?? 0;
+  const allOAuthPipelines = oauthData?.pages.flatMap((p) => p.data) ?? [];
+  const oauthTotal = oauthData?.pages[0]?.total ?? 0;
 
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage(); },
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        if (view === 'raw' && hasNextPage && !isFetchingNextPage) fetchNextPage();
+        if (view === 'oauth' && oauthHasNextPage && !oauthFetchingNextPage) oauthFetchNextPage();
+      },
       { rootMargin: '200px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [view, hasNextPage, isFetchingNextPage, fetchNextPage, oauthHasNextPage, oauthFetchingNextPage, oauthFetchNextPage]);
 
   const handleWsMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'connection:new' || msg.type === 'connection:completed' || msg.type === 'connection:error') {
@@ -439,8 +453,8 @@ export function GlobalTrafficPage() {
           description={
             view === 'raw' && data
               ? `${allConnections.length.toLocaleString()} / ${total.toLocaleString()} connections`
-              : view === 'oauth' && oauthPipelines
-                ? `${oauthPipelines.data.length.toLocaleString()} / ${oauthPipelines.total.toLocaleString()} OAuth pipelines`
+              : view === 'oauth' && oauthData
+                ? `${allOAuthPipelines.length.toLocaleString()} / ${oauthTotal.toLocaleString()} OAuth pipelines`
                 : 'Inspect live traffic, drill into connection details, and switch between raw traffic and OAuth pipeline views.'
           }
           actions={(
@@ -872,12 +886,12 @@ export function GlobalTrafficPage() {
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
-            ) : !(oauthPipelines?.data.length) ? (
+            ) : !allOAuthPipelines.length ? (
               <EmptyState title="No OAuth pipelines found yet" />
             ) : (
               <>
                 <div className="space-y-3 p-4 md:hidden">
-                  {oauthPipelines.data.map((pipeline) => (
+                  {allOAuthPipelines.map((pipeline) => (
                     <OAuthPipelineMobileCard
                       key={pipeline.id}
                       pipeline={pipeline}
@@ -913,7 +927,7 @@ export function GlobalTrafficPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                    {oauthPipelines.data.map((pipeline) => (
+                    {allOAuthPipelines.map((pipeline) => (
                       <OAuthPipelineRow
                         key={pipeline.id}
                         pipeline={pipeline}
@@ -922,6 +936,16 @@ export function GlobalTrafficPage() {
                     ))}
                   </tbody>
                 </table>
+                <div ref={sentinelRef} className="py-4 flex justify-center">
+                  {oauthFetchingNextPage && (
+                    <div className="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />Loading more…
+                    </div>
+                  )}
+                  {!oauthHasNextPage && allOAuthPipelines.length > 0 && !oauthLoading && (
+                    <p className="text-xs text-gray-300 dark:text-gray-600">All {oauthTotal.toLocaleString()} pipelines loaded</p>
+                  )}
+                </div>
               </>
             )}
           </TableScroller>

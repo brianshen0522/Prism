@@ -49,6 +49,13 @@ src/                        Backend source
     token.ts                Participant token get/regen
     dashboard.ts            Stats & chart (admin/monitor only)
     settings.ts             SystemSetting CRUD (admin only)
+    oauth.ts                OAuth pipeline list/detail (filtered by role)
+    integration-guide.ts    Per-user guide with curl snippets for each server
+  oauth/
+    reconcile.ts            Build OAuthPipeline records from raw Connection rows
+    extract.ts              Extract token hashes/previews from proxied request bodies
+  servers/
+    health.ts               Server heartbeat + direct backend probe (runs every 5 s)
   plugins/
     authenticate.ts         JWT Bearer verification middleware
     authorize.ts            Role-based access middleware
@@ -77,7 +84,7 @@ client/src/                 React frontend
 
 prisma/schema.prisma        Prism DB schema
 prisma-gazelle/schema.prisma  Gazelle DB schema (read-only)
-docker-compose.yml          prism-app + postgres-prism
+compose.yml                 prism-app + postgres-prism
 Dockerfile                  Multi-stage build (builder → runtime)
 entrypoint.sh               prisma db push → node dist/index.js
 nginx/prism.conf            Nginx TLS termination config (proxy ports bypass nginx)
@@ -93,7 +100,7 @@ nginx/prism.conf            Nginx TLS termination config (proxy ports bypass ngi
 npm run dev
 
 # Frontend (Vite dev server, proxies /api & /ws to :3000)
-cd client && npm run dev
+npm run dev:client
 
 # Run all tests
 npm test
@@ -176,11 +183,25 @@ JWT_REFRESH_EXPIRES_IN=7d
 
 | Model | Key fields | Notes |
 |---|---|---|
-| `BackendServer` | id, name, targetUrl, proxyPort (unique), isActive, bodySizeLimitKb | One HTTP listener per server |
-| `Connection` | userId, serverId, req*/res* fields, status (pending/completed/error) | Full request+response log |
+| `BackendServer` | id, name, targetUrl, proxyPort (unique), isActive, bodySizeLimitKb, serverRole | One HTTP listener per server; role is `generic`, `authentication`, or `resource` |
+| `Connection` | userId, serverId, req*/res* fields, status, connectionKind, oauthCallerType | Full request+response log; kind is `generic`, `oauth_token_issue`, `resource_access`, or `oauth_validation` |
+| `OAuthPipeline` | accessTokenHash (unique), participantUserId, authenticationServerId, legal, success | Groups a token issuance + all its resource calls under one access token |
+| `OAuthPipelineResourceCall` | pipelineId, resourceConnectionId, validationConnectionId | Joins a resource call and its introspection/validation call to a pipeline |
 | `RefreshToken` | userId, token (unique), expiresAt | Refresh token store; `token` column holds SHA-256 hash |
 | `ParticipantToken` | userId (unique), token (unique), expiresAt | Anti-cheat token; one per user |
 | `SystemSetting` | key (PK), value, updatedBy | Admin-configurable settings |
+
+### BackendServer OAuth fields
+
+| Field | Purpose |
+|---|---|
+| `serverRole` | `authentication` servers issue tokens; `resource` servers consume them |
+| `oauthAuthServerId` | Points a resource server at its paired authentication server |
+| `oauthTokenEndpoint` | Path on the auth server where clients POST for a token |
+| `oauthValidationEndpoint` | Path on the auth server used for token introspection |
+| `heartbeatEnabled` | Enables periodic proxy heartbeat checks via `servers/health.ts` |
+| `heartbeatUrl` / `heartbeatPath` | URL or path used for heartbeat probes |
+| `heartbeatIntervalSeconds` | How often to probe (default 60 s) |
 
 ### Important System Settings
 
@@ -232,13 +253,14 @@ Header name is **cached in memory for 60 s** to avoid a DB hit on every proxied 
 
 ## Roles & Access
 
-| Role | Dashboard | Global Traffic | Servers (admin) | Settings (admin) | My Token |
-|---|---|---|---|---|---|
-| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `monitor` | ✓ | ✓ | — | — | ✓ |
-| `user` | — | own traffic only | — | — | ✓ |
+| Role | Dashboard | Global Traffic | Servers (admin) | Settings (admin) | OAuth pipelines | My Token |
+|---|---|---|---|---|---|---|
+| `admin` | ✓ | ✓ | ✓ | ✓ | all | ✓ |
+| `monitor` | ✓ | ✓ | — | — | all | ✓ |
+| `oauth2` | — | — | — | — | all | ✓ |
+| `user` | — | own traffic only | — | — | own only | ✓ |
 
-Role comes from Gazelle `role_id`: 1 = admin, 2 = monitor, other = user.
+Role comes from Gazelle `role_id`: 1 = admin, 2 = monitor, other = user. `oauth2` is a special role that can view all OAuth pipelines but has no other elevated access.
 
 ---
 
@@ -250,6 +272,28 @@ Role comes from Gazelle `role_id`: 1 = admin, 2 = monitor, other = user.
 | `traffic:all` | admin, monitor | all connection events |
 | `traffic:user:{id}` | owner, admin, monitor | per-user events |
 | `server:{uuid}` | admin, monitor | server health + events |
+
+---
+
+## Server Health & Heartbeat
+
+`servers/health.ts` runs a background ticker every 5 s. For each active server with `heartbeatEnabled = true`, it:
+1. Sends an HTTP request through the **proxy port** with a unique `x-prism-heartbeat-id` header.
+2. Waits 300 ms, then queries the `Connection` table to confirm the proxy captured the request.
+3. If captured and status matches `heartbeatExpectedStatus` → lamp `green`; mismatch → `amber`; not captured → `red`.
+4. When the proxy heartbeat fails it falls back to a **direct backend probe** that bypasses the proxy.
+
+Results are stored in memory maps (`backendResults`, `heartbeatResults`) with the last 24 probe results kept as history. `getServerHealth(serverId)` returns both lamps and their histories.
+
+---
+
+## OAuth Pipeline Reconciliation
+
+`oauth/reconcile.ts` builds `OAuthPipeline` and `OAuthPipelineResourceCall` records by correlating raw `Connection` rows using hashed token values:
+
+- `oauth/extract.ts` extracts access/refresh token hashes from request/response bodies during the proxy pipeline.
+- An `OAuthPipeline` groups one token-issuance `Connection` with all resource calls that present the same access token.
+- `legal = true` when the participant token was present on token issuance; `success = true` when at least one resource call and its validation both succeeded.
 
 ---
 

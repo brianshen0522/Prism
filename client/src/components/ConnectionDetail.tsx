@@ -3,7 +3,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, Chevrons
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { copyToClipboard, fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor } from '../lib/utils';
+import { copyToClipboard, fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor, methodColor } from '../lib/utils';
 import type { ConnectionDetail } from '../lib/api';
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
@@ -343,6 +343,41 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
   );
 }
 
+// ─── cURL builder ─────────────────────────────────────────────────────────────
+
+// Headers that are injected by the proxy/nginx or managed by curl itself —
+// including them in a replay curl would be wrong or redundant.
+const CURL_SKIP_HEADERS = new Set([
+  'host', 'connection', 'content-length',
+  'x-real-ip', 'x-forwarded-for', 'x-forwarded-proto',
+  'x-forwarded-scheme', 'x-forwarded-host',
+]);
+
+function buildCurl(c: ConnectionDetail): string {
+  const headers = c.req_headers ?? {};
+
+  // Reconstruct full URL: req_url is only the path, so prepend scheme+host.
+  const host = (headers['host'] as string | undefined) ?? '';
+  const scheme = (headers['x-forwarded-proto'] as string | undefined)
+    ?? (headers['x-forwarded-scheme'] as string | undefined)
+    ?? 'http';
+  const url = host ? `${scheme}://${host}${c.req_url}` : c.req_url;
+
+  const parts: string[] = [`curl -X ${c.req_method}`, `  '${url}'`];
+
+  for (const [k, v] of Object.entries(headers)) {
+    if (CURL_SKIP_HEADERS.has(k.toLowerCase())) continue;
+    const val = (Array.isArray(v) ? v.join(', ') : v).replace(/'/g, "'\\''");
+    parts.push(`  -H '${k}: ${val}'`);
+  }
+
+  if (c.req_body) {
+    parts.push(`  --data '${c.req_body.replace(/'/g, "'\\''")}'`);
+  }
+
+  return parts.join(' \\\n');
+}
+
 // ─── ConnectionDetailContent — the shareable detail view ─────────────────────
 
 export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
@@ -366,7 +401,20 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
 
       {/* Request */}
       <Card>
-        <CardHeader><CardTitle>Request</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <CardTitle>Request</CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={`font-mono text-xs ${methodColor(c.req_method)}`}>
+                  {c.req_method}
+                </Badge>
+                <code className="text-xs font-mono text-gray-700 dark:text-gray-300 break-all">{c.req_url}</code>
+              </div>
+            </div>
+            <CopyButton value={buildCurl(c)} label="Copy cURL" />
+          </div>
+        </CardHeader>
         <CardContent className="space-y-4">
           <CollapsibleHeaders headers={c.req_headers} />
           <div>

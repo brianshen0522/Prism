@@ -39,6 +39,16 @@ export function ConnectionDetailPage() {
 
   return (
     <PageShell>
+      {window.history.length > 1 && (
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+      )}
       <PageHeader
         title="Connection Detail"
         description={(
@@ -46,11 +56,6 @@ export function ConnectionDetailPage() {
             <Badge className={methodColor(c.req_method)}>{c.req_method}</Badge>
             <span className="font-mono text-sm text-gray-700 dark:text-gray-300 break-all">{c.req_url}</span>
           </span>
-        )}
-        actions={(
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
         )}
       />
       <ConnectionDetailContent c={c} />

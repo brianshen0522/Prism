@@ -638,10 +638,7 @@ export function OAuthPipelineDetailPage() {
         Back to OAuth Pipelines
       </Link>
 
-      <div className={cn(
-        'mx-auto flex flex-col gap-4 xl:flex-row',
-        selectedConnectionId ? 'w-full items-start' : 'w-full max-w-7xl justify-center',
-      )}>
+      <div className="flex w-full flex-col gap-4 xl:flex-row xl:items-start">
         <div className={cn('space-y-4 min-w-0', selectedConnectionId ? 'flex-1' : 'w-full')}>
           <PageHeader
             title="OAuth Pipeline"

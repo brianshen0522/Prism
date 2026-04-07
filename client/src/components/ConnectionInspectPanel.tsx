@@ -31,11 +31,11 @@ export function ConnectionInspectPanel({
         )}
       >
         <Card className={cn(
-          'h-full overflow-hidden transition-transform duration-300 ease-out',
+          'flex h-full flex-col overflow-hidden transition-transform duration-300 ease-out',
           id ? 'translate-x-0' : 'translate-x-6',
         )}>
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
+          <CardContent className="flex flex-col p-0 h-full min-h-0">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
@@ -68,11 +68,11 @@ export function ConnectionInspectPanel({
                 No connection selected
               </div>
             ) : isLoading ? (
-              <div className="p-4">
+              <div className="flex-1 overflow-auto p-4">
                 <ConnectionDetailSkeleton />
               </div>
             ) : connection ? (
-              <div className="h-[calc(100%-4.5rem)] overflow-auto p-4">
+              <div className="flex-1 overflow-auto p-4">
                 <ConnectionDetailContent c={connection} />
               </div>
             ) : (

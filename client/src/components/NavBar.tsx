@@ -5,11 +5,6 @@ import { useAuthStore } from '../store/auth';
 import { logout } from '../lib/api';
 import { cn } from '../lib/utils';
 
-const monitorLinks = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/traffic', label: 'Global Traffic', icon: Globe },
-];
-
 const adminLinks = [
   { to: '/servers', label: 'Servers', icon: Server },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -21,11 +16,20 @@ export function NavBar() {
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isPrivileged = user?.role === 'admin' || user?.role === 'monitor' || user?.role === 'oauth2';
-  const isAdmin = user?.role === 'admin';
+  const role = user?.role;
+  const isAdmin = role === 'admin';
+  const isMonitor = role === 'admin' || role === 'monitor';
+  const isOAuth2 = role === 'oauth2';
 
   const links = [
-    ...(isPrivileged ? monitorLinks : [{ to: '/connections', label: 'My Connections', icon: List }]),
+    ...(isMonitor
+      ? [
+          { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+          { to: '/traffic', label: 'Global Traffic', icon: Globe },
+        ]
+      : isOAuth2
+        ? [{ to: '/traffic', label: 'Global Traffic', icon: Globe }]
+        : [{ to: '/connections', label: 'My Connections', icon: List }]),
     { to: '/token', label: 'My Token', icon: KeyRound },
     { to: '/guide', label: 'Integration Guide', icon: BookOpen },
     ...(isAdmin ? adminLinks : []),

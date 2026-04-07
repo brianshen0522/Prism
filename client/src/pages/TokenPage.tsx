@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, Check, RefreshCw, ShieldCheck, Clock } from 'lucide-react';
+import { Copy, Check, RefreshCw, ShieldCheck, Clock, Play, ChevronDown, ChevronUp } from 'lucide-react';
 import { fetchParticipantToken, regenParticipantToken } from '../lib/api';
 import { copyToClipboard } from '../lib/utils';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { PageHeader, PageShell } from '../components/PageLayout';
 import { Skeleton } from '../components/ui/skeleton';
@@ -57,6 +58,114 @@ function Countdown({ expiresAt, onExpired }: { expiresAt: string; onExpired: () 
       <span>
         {remaining === 0 ? 'Expired — refreshing…' : `Expires in ${mins}:${String(secs).padStart(2, '0')}`}
       </span>
+    </div>
+  );
+}
+
+type TryItResponse = { status: number; body: unknown; latencyMs: number };
+
+function TryItPanel({ endpoint, defaultUsername }: { endpoint: string; defaultUsername: string }) {
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState(defaultUsername);
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<TryItResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  const send = async () => {
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    const started = performance.now();
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const latencyMs = Math.round(performance.now() - started);
+      let body: unknown;
+      try { body = await res.json(); } catch { body = await res.text(); }
+      setResult({ status: res.status, body, latencyMs });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColor = (s: number) => {
+    if (s < 300) return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+    if (s < 400) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+    return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+  };
+
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((v) => !v);
+          if (!open) setTimeout(() => passwordRef.current?.focus(), 50);
+        }}
+        className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          <Play className="h-3 w-3" />
+          Try it
+        </span>
+        {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-dashed border-gray-300 px-4 pb-4 pt-3 space-y-3 dark:border-gray-600">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Username</label>
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-mono text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                placeholder="username"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Password</label>
+              <input
+                ref={passwordRef}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && send()}
+                className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-mono text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+
+          <Button size="sm" variant="primary" onClick={send} loading={loading} className="w-full justify-center">
+            <Play className="h-3 w-3" />
+            Send
+          </Button>
+
+          {error && (
+            <p className="rounded bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400">{error}</p>
+          )}
+
+          {result && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className={statusColor(result.status)}>{result.status}</Badge>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{result.latencyMs} ms</span>
+              </div>
+              <pre className="max-h-64 overflow-auto rounded bg-gray-900 p-3 text-xs text-green-300 dark:bg-black">
+                {JSON.stringify(result.body, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -205,6 +314,7 @@ export function TokenPage() {
                       {currentTokenCurl}
                     </pre>
                   </div>
+                  <TryItPanel endpoint={`${currentOrigin}/api/token/current`} defaultUsername={curlUsername} />
                 </div>
 
                 <div className="space-y-3">
@@ -226,6 +336,7 @@ export function TokenPage() {
                       {renewTokenCurl}
                     </pre>
                   </div>
+                  <TryItPanel endpoint={`${currentOrigin}/api/token/renew`} defaultUsername={curlUsername} />
                 </div>
               </CardContent>
             </Card>

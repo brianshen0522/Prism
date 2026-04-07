@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import cycle
 from typing import Any, Union
 from urllib.parse import urljoin
@@ -14,6 +14,87 @@ from .discovery import DirectServer, OAuthPair
 from .failures import classify_participant_token_failure
 from .profiles import direct_failure_capability_warnings, merged_failure_settings, target_paths
 from .reporting import ReportCollector
+
+# How many seconds before expiry to proactively renew the token.
+_TOKEN_REFRESH_BUFFER_SECONDS = 30.0
+
+
+@dataclass
+class _CachedToken:
+  token: str
+  header_name: str
+  expires_at: float  # monotonic timestamp
+
+
+@dataclass
+class ParticipantTokenCache:
+  """Per-user token cache with an asyncio lock so concurrent workers
+  sharing the same account never overwrite each other's tokens."""
+  _cache: dict[str, _CachedToken] = field(default_factory=dict)
+  _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+
+  def _lock_for(self, username: str) -> asyncio.Lock:
+    if username not in self._locks:
+      self._locks[username] = asyncio.Lock()
+    return self._locks[username]
+
+  def _is_fresh(self, username: str) -> bool:
+    entry = self._cache.get(username)
+    if not entry:
+      return False
+    return time.monotonic() < entry.expires_at - _TOKEN_REFRESH_BUFFER_SECONDS
+
+  async def get(
+    self,
+    username: str,
+    renew_fn: Any,
+  ) -> StepResult:
+    """Return a cached token if still fresh, otherwise renew under a per-user lock."""
+    if self._is_fresh(username):
+      entry = self._cache[username]
+      return StepResult(
+        ok=True,
+        status_code=200,
+        latency_ms=0.0,
+        payload={'token': entry.token, 'header_name': entry.header_name},
+      )
+
+    async with self._lock_for(username):
+      # Re-check after acquiring the lock — another worker may have renewed already.
+      if self._is_fresh(username):
+        entry = self._cache[username]
+        return StepResult(
+          ok=True,
+          status_code=200,
+          latency_ms=0.0,
+          payload={'token': entry.token, 'header_name': entry.header_name},
+        )
+
+      result = await renew_fn()
+      if result.ok and result.payload and result.payload.get('token'):
+        expires_in = _ttl_seconds_from_payload(result.payload)
+        self._cache[username] = _CachedToken(
+          token=str(result.payload['token']),
+          header_name=str(result.payload.get('header_name') or 'X-Participant-Token'),
+          expires_at=time.monotonic() + expires_in,
+        )
+      return result
+
+
+def _ttl_seconds_from_payload(payload: dict[str, Any]) -> float:
+  """Parse expires_at from the token response to compute remaining TTL."""
+  expires_at_str = payload.get('expires_at')
+  if expires_at_str:
+    try:
+      import datetime
+      dt = datetime.datetime.fromisoformat(str(expires_at_str).replace('Z', '+00:00'))
+      now = datetime.datetime.now(datetime.timezone.utc)
+      remaining = (dt - now).total_seconds()
+      return max(remaining, 0.0)
+    except Exception:
+      pass
+  # Fallback: assume 5-minute TTL
+  return 300.0
 
 
 @dataclass(frozen=True)
@@ -107,6 +188,7 @@ async def run_load(
     return
 
   client = StressHttpClient()
+  token_cache = ParticipantTokenCache()
   stop_at = time.monotonic() + config.duration_seconds
   target_cycle = cycle(targets)
   user_cycle = cycle(users)
@@ -123,7 +205,7 @@ async def run_load(
       selection = RuntimeSelection(target=target, user=user, workflow_kind=workflow_kind, failure_mode=failure_mode, failure_stage=failure_stage)
       collector.workflow_started(pair_name)
       try:
-        ok, reason = await execute_workflow(config, client, selection, collector, rng)
+        ok, reason = await execute_workflow(config, client, selection, collector, rng, token_cache)
       finally:
         collector.workflow_finished(pair_name)
       collector.record_workflow(workflow_kind if workflow_kind == 'success' or not failure_mode else f'failure:{failure_mode}', ok, pair_name, reason)
@@ -150,11 +232,12 @@ async def execute_workflow(
   selection: RuntimeSelection,
   collector: ReportCollector,
   rng: random.Random,
+  token_cache: ParticipantTokenCache | None = None,
 ) -> tuple[bool, str | None]:
   if isinstance(selection.target, DirectServer):
-    return await execute_direct_workflow(config, client, selection, collector)
+    return await execute_direct_workflow(config, client, selection, collector, token_cache)
 
-  participant = await get_participant_token(config, client, selection.user, collector, selection.pair)
+  participant = await get_participant_token(config, client, selection.user, collector, selection.pair, token_cache)
   if not participant.ok or not participant.payload or not participant.payload.get('token'):
     return False, classify_participant_token_failure(participant)
 
@@ -228,15 +311,22 @@ async def get_participant_token(
   user: UserCredential,
   collector: ReportCollector,
   pair: OAuthPair,
+  token_cache: ParticipantTokenCache | None = None,
 ) -> StepResult:
   pair_name = choose_pair_name(pair)
-  result = await tracked_post_json(
-    client,
-    collector,
-    pair_name,
-    f'{config.prism_origin}/api/token/current',
-    {'username': user.username, 'password': user.password},
-  )
+
+  async def renew() -> StepResult:
+    return await tracked_post_json(
+      client, collector, pair_name,
+      f'{config.prism_origin}/api/token/renew',
+      {'username': user.username, 'password': user.password},
+    )
+
+  if token_cache is not None:
+    result = await token_cache.get(user.username, renew)
+  else:
+    result = await renew()
+
   collector.record_step('participant_token', result.ok, result.latency_ms, pair_name)
   return result
 
@@ -246,17 +336,24 @@ async def execute_direct_workflow(
   client: StressHttpClient,
   selection: RuntimeSelection,
   collector: ReportCollector,
+  token_cache: ParticipantTokenCache | None = None,
 ) -> tuple[bool, str | None]:
   direct = selection.target
   assert isinstance(direct, DirectServer)
   target_name = choose_target_name(direct)
-  participant = await tracked_post_json(
-    client,
-    collector,
-    target_name,
-    f'{config.prism_origin}/api/token/current',
-    {'username': selection.user.username, 'password': selection.user.password},
-  )
+
+  async def renew() -> StepResult:
+    return await tracked_post_json(
+      client, collector, target_name,
+      f'{config.prism_origin}/api/token/renew',
+      {'username': selection.user.username, 'password': selection.user.password},
+    )
+
+  if token_cache is not None:
+    participant = await token_cache.get(selection.user.username, renew)
+  else:
+    participant = await renew()
+
   collector.record_step('participant_token', participant.ok, participant.latency_ms, target_name)
   if not participant.ok or not participant.payload or not participant.payload.get('token'):
     return False, classify_participant_token_failure(participant)

@@ -103,10 +103,11 @@ export function MultiSelect({
   const toggle = (val: string) =>
     onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
 
+  const labelFor = (val: string) => options.find((o) => o.value === val)?.label ?? val;
   const label =
     selected.length === 0 ? `All ${placeholder}`
-    : selected.length <= 2 ? selected.join(', ')
-    : `${selected[0]} +${selected.length - 1}`;
+    : selected.length <= 2 ? selected.map(labelFor).join(', ')
+    : `${labelFor(selected[0])} +${selected.length - 1}`;
 
   const loweredQuery = query.trim().toLowerCase();
   const visibleOptions = loweredQuery
@@ -819,18 +820,12 @@ export function ConnectionFilterBuilder({
   return (
     <div className="space-y-3">
       {requiredConditions.length > 0 && (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/50 p-3 space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Required Filters</span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-blue-600 dark:text-blue-400">Always shown</span>
-          </div>
-
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
           {requiredConditions.map((condition) => (
-            <div key={condition.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
-              <div className={`${SEL_CLS} w-full sm:min-w-[140px] bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300`}>
+            <div key={condition.id} className="flex flex-col gap-1 min-w-[160px] flex-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 {fieldLabel(condition.field)}
-              </div>
-
+              </span>
               <ConditionValueInput
                 condition={condition}
                 serverOptions={serverOptions}
@@ -843,12 +838,15 @@ export function ConnectionFilterBuilder({
         </div>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Additional Conditions</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">
-          Structured fields are unique. Text can be added multiple times.
-        </span>
-      </div>
+      {requiredConditions.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            Additional
+          </span>
+          <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+        </div>
+      )}
 
       {conditions.map((condition, idx) => {
         const rowFieldOptions = availableFieldOptions.filter(

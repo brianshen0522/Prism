@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound, List, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen } from 'lucide-react';
+import { LogOut, KeyRound, List, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
+import { useThemeStore, type Theme } from '../store/theme';
 import { logout } from '../lib/api';
 import { cn } from '../lib/utils';
+
+const THEME_CYCLE: Theme[] = ['system', 'light', 'dark'];
+const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const;
+const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
 
 const adminLinks = [
   { to: '/servers', label: 'Servers', icon: Server },
@@ -20,6 +25,10 @@ export function NavBar() {
   const isAdmin = role === 'admin';
   const isMonitor = role === 'admin' || role === 'monitor';
   const isOAuth2 = role === 'oauth2';
+
+  const { theme, setTheme } = useThemeStore();
+  const ThemeIcon = THEME_ICON[theme];
+  const cycleTheme = () => setTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length]);
 
   const links = [
     ...(isMonitor
@@ -73,6 +82,14 @@ export function NavBar() {
               <span className="capitalize">{user.role}</span>
             </span>
           )}
+          <button
+            type="button"
+            onClick={cycleTheme}
+            title={`Theme: ${THEME_LABEL[theme]} (click to cycle)`}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <ThemeIcon className="h-4 w-4" />
+          </button>
           <button
             onClick={handleLogout}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
@@ -142,7 +159,15 @@ export function NavBar() {
             ))}
           </div>
 
-          <div className="absolute inset-x-0 bottom-0 border-t border-gray-200 p-3 dark:border-gray-700">
+          <div className="absolute inset-x-0 bottom-0 border-t border-gray-200 p-3 space-y-2 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={cycleTheme}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            >
+              <ThemeIcon className="h-4 w-4" />
+              {THEME_LABEL[theme]} theme
+            </button>
             <button
               onClick={handleLogout}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"

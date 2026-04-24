@@ -4,6 +4,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuthStore } from './store/auth';
 import { LoginPage } from './pages/LoginPage';
 import { TokenPage } from './pages/TokenPage';
+import { ConnectionViewPage } from './pages/ConnectionViewPage';
+import { OAuthPipelineViewPage } from './pages/OAuthPipelineViewPage';
 import { IntegrationGuidePage } from './pages/IntegrationGuidePage';
 import { IntegrationGuideDetailPage } from './pages/IntegrationGuideDetailPage';
 import { MyConnectionsPage } from './pages/MyConnectionsPage';
@@ -26,6 +28,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/view/c/:shareToken" element={<ConnectionViewPage />} />
+      <Route path="/view/op/:shareToken" element={<OAuthPipelineViewPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>

@@ -1,14 +1,36 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, CircleDashed } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CircleDashed, Link as LinkIcon, Check } from 'lucide-react';
 import { fetchOAuthPipeline } from '../lib/api';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
 import { PageHeader } from '../components/PageLayout';
 import { Skeleton } from '../components/ui/skeleton';
 import { ConnectionInspectPanel } from '../components/ConnectionInspectPanel';
-import { cn, fmtDate, httpStatusColor, methodColor } from '../lib/utils';
+import { cn, fmtDate, httpStatusColor, methodColor, copyToClipboard } from '../lib/utils';
+
+function ShareLinkButton({ shareToken }: { shareToken: string | null | undefined }) {
+  const [copied, setCopied] = useState(false);
+  if (!shareToken) return null;
+  const url = `${window.location.origin}/view/op/${shareToken}`;
+  async function handle() {
+    await copyToClipboard(url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={handle}
+      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+      title="Copy share link"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <LinkIcon className="h-3.5 w-3.5" />}
+      {copied ? 'Copied' : 'Copy share link'}
+    </button>
+  );
+}
 
 function StatusBadge({ ok, trueLabel, falseLabel, falseTone = 'error' }: {
   ok: boolean;
@@ -204,7 +226,7 @@ function ActorHeader({
   );
 }
 
-function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection, selectedConnectionId, hoveredConnectionId, onHoverConnection }: {
+export function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConnection, selectedConnectionId, hoveredConnectionId, onHoverConnection }: {
   summary: Awaited<ReturnType<typeof fetchOAuthPipeline>>['summary'];
   tokenIssue: Awaited<ReturnType<typeof fetchOAuthPipeline>>['token_issue'];
   resourceCalls: Awaited<ReturnType<typeof fetchOAuthPipeline>>['resource_calls'];
@@ -648,6 +670,7 @@ export function OAuthPipelineDetailPage() {
                 <StatusBadge ok={summary.complete} trueLabel="Complete" falseLabel="Incomplete" />
                 <StatusBadge ok={summary.legal} trueLabel="Legal" falseLabel="Illegal" />
                 <StatusBadge ok={summary.success} trueLabel="Success" falseLabel="Failed" />
+                <ShareLinkButton shareToken={data.share_token} />
               </>
             )}
           />

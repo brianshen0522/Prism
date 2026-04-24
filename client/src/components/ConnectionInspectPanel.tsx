@@ -1,6 +1,6 @@
 import { ExternalLink, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchConnection } from '../lib/api';
+import { fetchConnection, type ConnectionDetail } from '../lib/api';
 import { Card, CardContent } from './ui/card';
 import { ConnectionDetailContent, ConnectionDetailSkeleton } from './ConnectionDetail';
 import { cn } from '../lib/utils';
@@ -10,15 +10,22 @@ export function ConnectionInspectPanel({
   onClose,
   title = 'Connection Inspect',
   description = 'Inspect the raw request and response for the selected connection.',
+  fetchFn,
+  getExternalHref,
 }: {
   id: string | null;
   onClose: () => void;
   title?: string;
   description?: string;
+  fetchFn?: (id: string) => Promise<ConnectionDetail>;
+  getExternalHref?: (id: string) => string | null;
 }) {
+  const fetch = fetchFn ?? fetchConnection;
+  const externalHref = id ? (getExternalHref ? getExternalHref(id) : `/connections/${id}`) : null;
+
   const { data: connection, isLoading } = useQuery({
-    queryKey: ['connection', id],
-    queryFn: () => fetchConnection(id!),
+    queryKey: ['connection', fetchFn ? 'public' : 'auth', id],
+    queryFn: () => fetch(id!),
     enabled: !!id,
   });
 
@@ -41,9 +48,9 @@ export function ConnectionInspectPanel({
                 <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
               </div>
               <div className="flex items-center gap-1">
-                {id && (
+                {externalHref && (
                   <a
-                    href={`/connections/${id}`}
+                    href={externalHref}
                     target="_blank"
                     rel="noreferrer"
                     className="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"

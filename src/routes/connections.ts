@@ -4,6 +4,7 @@ import { prism } from '../db/prism';
 import { gazelle } from '../db/gazelle';
 import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
+import { ensureConnectionShareToken } from '../lib/share';
 
 type SearchCond = { term: string; scopes: string[] };
 type FilterField = 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
@@ -45,7 +46,7 @@ function fmtConnection(c: Record<string, unknown>, serverName?: string) {
   };
 }
 
-function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string) {
+export function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string) {
   return {
     ...fmtConnection(c, serverName),
     req_headers: c.reqHeaders,
@@ -55,6 +56,7 @@ function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string) {
     res_headers: c.resHeaders ?? null,
     res_body: c.resBody ?? null,
     res_body_truncated: c.resBodyTruncated,
+    share_token: (c.shareToken as string | null) ?? null,
   };
 }
 
@@ -367,7 +369,8 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
 
-    reply.send(fmtConnectionDetail(c as any, (c as any).server?.name));
+    const shareToken = await ensureConnectionShareToken(c.id);
+    reply.send({ ...fmtConnectionDetail(c as any, (c as any).server?.name), share_token: shareToken });
   });
 
   // GET /api/users  — privileged: list all Gazelle users for filter dropdown

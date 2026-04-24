@@ -8,6 +8,18 @@ import {
   buildOAuthPipelineList,
   reconcileOAuthPipeline,
 } from '../oauth/reconcile';
+import { ensureConnectionShareTokens, ensurePipelineShareToken } from '../lib/share';
+
+type PipelineDetail = NonNullable<Awaited<ReturnType<typeof buildOAuthPipelineDetail>>>;
+
+function collectConnectionIds(result: PipelineDetail): string[] {
+  const calls: Array<{ resource_connection_id: string; validation?: { connection_id: string } | null }> = result.resource_calls ?? [];
+  return [
+    result.token_issue?.connection_id ?? null,
+    ...calls.map((rc) => rc.resource_connection_id),
+    ...calls.map((rc) => rc.validation?.connection_id ?? null),
+  ].filter((id): id is string => !!id);
+}
 
 function parseCsvValues(input?: string) {
   if (!input?.trim()) return [];
@@ -91,6 +103,10 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
     if (!isPrivileged && result.summary.participant_user?.id !== request.user.sub) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
-    return reply.send(result);
+    const [shareToken, connectionShareTokens] = await Promise.all([
+      ensurePipelineShareToken(id),
+      ensureConnectionShareTokens(collectConnectionIds(result)),
+    ]);
+    return reply.send({ ...result, share_token: shareToken, connection_share_tokens: connectionShareTokens });
   });
 };

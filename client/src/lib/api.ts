@@ -143,6 +143,7 @@ export interface ConnectionDetail extends ConnectionSummary {
   res_headers: Record<string, string | string[]> | null;
   res_body: string | null;
   res_body_truncated: boolean;
+  share_token?: string | null;
 }
 
 export interface ConnectionsPage {
@@ -355,6 +356,8 @@ export interface OAuthPipelineDetailResponse {
   access_token_full?: string | null;
   refresh_token_full?: string | null;
   issued_refresh_token_full?: string | null;
+  share_token?: string | null;
+  connection_share_tokens?: Record<string, string>;
   refresh_chain: {
     previous_pipeline: {
       id: string;
@@ -781,4 +784,20 @@ export function upsertSetting(key: string, value: string) {
 export async function deleteSetting(key: string) {
   const res = await apiFetch(`/admin/settings/${encodeURIComponent(key)}`, { method: 'DELETE' });
   if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+}
+
+// ─── Public (unauthenticated) view endpoints ──────────────────────────────────
+
+async function publicJson<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+export function fetchPublicConnection(shareToken: string) {
+  return publicJson<ConnectionDetail>(`/public/connections/${shareToken}`);
+}
+
+export function fetchPublicOAuthPipeline(shareToken: string) {
+  return publicJson<OAuthPipelineDetailResponse>(`/public/oauth/pipelines/${shareToken}`);
 }

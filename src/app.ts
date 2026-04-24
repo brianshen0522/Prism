@@ -11,6 +11,7 @@ import { dashboardRoutes } from './routes/dashboard';
 import { settingsRoutes } from './routes/settings';
 import { oauthRoutes } from './routes/oauth';
 import { integrationGuideRoutes } from './routes/integration-guide';
+import { publicRoutes } from './routes/public';
 import { setupWebSocket } from './ws/setup';
 import { initializeServerHealth, shutdownServerHealth } from './servers/health';
 
@@ -36,6 +37,7 @@ export async function buildApp() {
   await app.register(settingsRoutes, { prefix: '/api' });
   await app.register(oauthRoutes, { prefix: '/api' });
   await app.register(integrationGuideRoutes, { prefix: '/api' });
+  await app.register(publicRoutes, { prefix: '/api' });
 
   // Serve the React frontend (production build)
   await app.register(staticFiles, {

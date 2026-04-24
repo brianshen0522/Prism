@@ -108,6 +108,7 @@ model Connection {
   oauthTokenIssuePipeline OAuthPipeline?           @relation("OAuthTokenIssue")
   oauthResourceCall       OAuthPipelineResourceCall? @relation("OAuthResourceConnection")
   oauthValidationCall     OAuthPipelineResourceCall? @relation("OAuthValidationConnection")
+  shareToken              String?                  @unique @map("share_token")
 
   @@index([accessTokenHash])
   @@index([refreshTokenHash])
@@ -135,6 +136,7 @@ model OAuthPipeline {
   authenticationServer   BackendServer?              @relation(fields: [authenticationServerId], references: [id])
   tokenIssueConnection   Connection?                 @relation("OAuthTokenIssue", fields: [tokenIssueConnectionId], references: [id])
   resourceCalls          OAuthPipelineResourceCall[]
+  shareToken             String?                     @unique @map("share_token")
 
   @@index([participantUserId])
   @@index([authenticationServerId])

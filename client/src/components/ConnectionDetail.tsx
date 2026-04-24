@@ -1,5 +1,5 @@
-import { useState, useContext, createContext, useEffect, useRef } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Search, Server, X } from 'lucide-react';
+import { useState, useContext, createContext, useEffect, useRef, type ReactNode } from 'react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Link, Search, Server, X } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
@@ -25,7 +25,7 @@ function HeadersTable({ headers }: { headers: Record<string, string | string[]> 
   );
 }
 
-function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
+function CopyButton({ value, label = 'Copy', icon }: { value: string; label?: string; icon?: ReactNode }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -45,7 +45,7 @@ function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }
       className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
       title={label}
     >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? <Check className="h-3 w-3" /> : (icon ?? <Copy className="h-3 w-3" />)}
       {copied ? 'Copied' : label}
     </button>
   );
@@ -384,7 +384,7 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
   return (
     <div className="space-y-4">
       {/* Summary */}
-      <div className="flex flex-wrap gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
           <Clock className="h-3.5 w-3.5" />{fmtDate(c.req_timestamp)}
         </div>
@@ -397,6 +397,13 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
         <span className="text-gray-400 dark:text-gray-500 text-xs">
           {fmtBytes(c.req_body_size)} → {fmtBytes(c.res_body_size)}
         </span>
+        {c.share_token && (
+          <CopyButton
+            value={`${window.location.origin}/view/c/${c.share_token}`}
+            label="Copy share link"
+            icon={<Link className="h-3 w-3" />}
+          />
+        )}
       </div>
 
       {/* Request */}

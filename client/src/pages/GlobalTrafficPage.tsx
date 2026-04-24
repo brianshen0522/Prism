@@ -491,19 +491,6 @@ export function GlobalTrafficPage() {
                 <X className="h-3.5 w-3.5" /> Reset
               </Button>
             )}
-            {view === 'raw' && (
-              <button
-                type="button"
-                onClick={() => setShowHeartbeatTraffic((value) => !value)}
-                className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                  showHeartbeatTraffic
-                    ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                System heartbeat {showHeartbeatTraffic ? 'shown' : 'hidden'}
-              </button>
-            )}
             <Button variant="secondary" size="sm" className="md:hidden" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filters

@@ -355,13 +355,7 @@ const CURL_SKIP_HEADERS = new Set([
 
 function buildCurl(c: ConnectionDetail): string {
   const headers = c.req_headers ?? {};
-
-  // Reconstruct full URL: req_url is only the path, so prepend scheme+host.
-  const host = (headers['host'] as string | undefined) ?? '';
-  const scheme = (headers['x-forwarded-proto'] as string | undefined)
-    ?? (headers['x-forwarded-scheme'] as string | undefined)
-    ?? 'http';
-  const url = host ? `${scheme}://${host}${c.req_url}` : c.req_url;
+  const url = c.req_host ? `${c.req_host}${c.req_url}` : c.req_url;
 
   const parts: string[] = [`curl -X ${c.req_method}`, `  '${url}'`];
 
@@ -416,7 +410,9 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
                 <Badge className={`font-mono text-xs ${methodColor(c.req_method)}`}>
                   {c.req_method}
                 </Badge>
-                <code className="text-xs font-mono text-gray-700 dark:text-gray-300 break-all">{c.req_url}</code>
+                <code className="text-xs font-mono text-gray-700 dark:text-gray-300 break-all">
+                  {c.req_host && <span className="text-gray-400 dark:text-gray-500">{c.req_host}</span>}{c.req_url}
+                </code>
               </div>
             </div>
             <CopyButton value={buildCurl(c)} label="Copy cURL" />

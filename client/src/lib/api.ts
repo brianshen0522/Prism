@@ -127,6 +127,7 @@ export interface ConnectionSummary {
   status: 'pending' | 'completed' | 'error';
   req_method: string;
   req_url: string;
+  req_host: string | null;
   req_timestamp: string;
   req_body_size: number | null;
   res_status_code: number | null;

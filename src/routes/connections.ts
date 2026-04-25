@@ -28,6 +28,15 @@ const ALL_SCOPE_KEYS = Object.keys(SCOPE_COL);
 const authenticateHook = [authenticate];
 const privileged = [authenticate, requireRole('admin', 'monitor', 'oauth2')];
 
+function extractReqHost(reqHeaders: unknown): string | null {
+  if (!reqHeaders || typeof reqHeaders !== 'object') return null;
+  const h = reqHeaders as Record<string, unknown>;
+  const host = (h['host'] ?? h['Host']) as string | undefined;
+  if (!host) return null;
+  const scheme = (h['x-forwarded-proto'] ?? h['x-forwarded-scheme'] ?? 'http') as string;
+  return `${scheme.split(',')[0].trim()}://${host}`;
+}
+
 function fmtConnection(c: Record<string, unknown>, serverName?: string) {
   return {
     id: c.id,
@@ -37,6 +46,7 @@ function fmtConnection(c: Record<string, unknown>, serverName?: string) {
     status: c.status,
     req_method: c.reqMethod,
     req_url: c.reqUrl,
+    req_host: extractReqHost(c.reqHeaders),
     req_timestamp: c.reqTimestamp,
     req_body_size: c.reqBodySize ?? null,
     res_status_code: c.resStatusCode ?? null,

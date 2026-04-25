@@ -54,7 +54,9 @@ export function ConnectionDetailPage() {
         description={(
           <span className="flex items-center gap-2 flex-wrap">
             <Badge className={methodColor(c.req_method)}>{c.req_method}</Badge>
-            <span className="font-mono text-sm text-gray-700 dark:text-gray-300 break-all">{c.req_url}</span>
+            <span className="font-mono text-sm text-gray-700 dark:text-gray-300 break-all">
+              {c.req_host && <span className="text-gray-400 dark:text-gray-500">{c.req_host}</span>}{c.req_url}
+            </span>
           </span>
         )}
       />

@@ -73,9 +73,11 @@ function TrafficRow({ c, isNew, selected, onSelect }: {
     >
       <td className={`sticky left-0 z-10 px-4 py-2.5 text-xs whitespace-nowrap ${selected ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-white dark:bg-gray-900'} text-gray-400 dark:text-gray-500`}>{fmtDate(c.req_timestamp)}</td>
       <td className="px-4 py-2.5"><Badge className={methodColor(c.req_method)}>{c.req_method}</Badge></td>
-      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_url}>
+      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_host ? `${c.req_host}${c.req_url}` : c.req_url}>
         <div className="flex items-center gap-2">
-          <span className="truncate">{c.req_url}</span>
+          <span className="truncate">
+            {c.req_host && <span className="text-gray-400 dark:text-gray-500">{c.req_host}</span>}{c.req_url}
+          </span>
           {c.is_system_heartbeat && (
             <Badge className="bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
               heartbeat

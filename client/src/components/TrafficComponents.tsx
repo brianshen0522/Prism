@@ -76,7 +76,13 @@ export function isFilterConditionActive(condition: FilterCondition): boolean {
 // ─── MultiSelect ─────────────────────────────────────────────────────────────
 
 export function MultiSelect({
-  placeholder, options, selected, onChange, filterable = false, searchPlaceholder = 'Filter options...',
+  placeholder,
+  options,
+  selected,
+  onChange,
+  filterable = false,
+  searchPlaceholder = 'Filter options...',
+  className = 'w-full sm:w-auto',
 }: {
   placeholder: string;
   options: { value: string; label: string }[];
@@ -84,6 +90,7 @@ export function MultiSelect({
   onChange: (vals: string[]) => void;
   filterable?: boolean;
   searchPlaceholder?: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -115,7 +122,7 @@ export function MultiSelect({
     : options;
 
   return (
-    <div ref={ref} className="relative w-full sm:w-auto">
+    <div ref={ref} className={`relative ${className}`}>
       <button
         type="button"
         onClick={() => {
@@ -605,6 +612,7 @@ const FILTER_FIELD_OPTIONS: { value: FilterField; label: string }[] = [
   { value: 'user_id', label: 'User' },
   { value: 'text', label: 'Text' },
 ];
+const FILTER_CONTROL_CLS = 'w-full sm:w-[180px] sm:shrink-0';
 
 function fieldLabel(field: FilterField | '') {
   return FILTER_FIELD_OPTIONS.find((option) => option.value === field)?.label ?? 'Condition';
@@ -623,7 +631,7 @@ function FilterFieldSelect({
     <select
       value={value}
       onChange={(e) => onChange((e.target.value as FilterField | '') || '')}
-      className={`${SEL_CLS} w-full sm:min-w-[140px]`}
+      className={`${SEL_CLS} ${FILTER_CONTROL_CLS}`}
     >
       <option value="">Choose condition</option>
       {options.map((option) => (
@@ -653,7 +661,7 @@ function ConditionValueInput({
       <select
         value={condition.values[0] ?? 'mine'}
         onChange={(e) => onChange({ values: [e.target.value] })}
-        className={`${SEL_CLS} w-full sm:min-w-[140px]`}
+        className={`${SEL_CLS} ${FILTER_CONTROL_CLS}`}
       >
         <option value="mine">Mine</option>
         <option value="all">All</option>
@@ -668,6 +676,7 @@ function ConditionValueInput({
         options={serverOptions}
         selected={condition.values}
         onChange={(values) => onChange({ values })}
+        className={FILTER_CONTROL_CLS}
       />
     );
   }
@@ -679,6 +688,7 @@ function ConditionValueInput({
         options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
         selected={condition.values}
         onChange={(values) => onChange({ values })}
+        className={FILTER_CONTROL_CLS}
       />
     );
   }
@@ -694,6 +704,7 @@ function ConditionValueInput({
         ]}
         selected={condition.values}
         onChange={(values) => onChange({ values })}
+        className={FILTER_CONTROL_CLS}
       />
     );
   }
@@ -707,6 +718,7 @@ function ConditionValueInput({
         onChange={(values) => onChange({ values })}
         filterable
         searchPlaceholder="Search status codes..."
+        className={FILTER_CONTROL_CLS}
       />
     );
   }
@@ -720,6 +732,7 @@ function ConditionValueInput({
         onChange={(values) => onChange({ values })}
         filterable
         searchPlaceholder="Search users..."
+        className={FILTER_CONTROL_CLS}
       />
     );
   }
@@ -727,7 +740,7 @@ function ConditionValueInput({
   if (condition.field === 'text') {
     return (
       <>
-        <div className="relative w-full flex-1 min-w-[220px]">
+        <div className={`relative ${FILTER_CONTROL_CLS}`}>
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -752,7 +765,7 @@ function ConditionValueInput({
   }
 
   return (
-    <div className="w-full sm:min-w-[160px] px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded-md">
+    <div className={`${FILTER_CONTROL_CLS} px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-gray-600 rounded-md`}>
       Select a field first
     </div>
   );
@@ -818,12 +831,15 @@ export function ConnectionFilterBuilder({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {requiredConditions.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
           {requiredConditions.map((condition) => (
-            <div key={condition.id} className="flex flex-col gap-1 min-w-[160px] flex-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            <div
+              key={condition.id}
+              className="flex w-full flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-50/70 p-1.5 dark:border-gray-700 dark:bg-gray-800/50 sm:w-auto sm:flex-row sm:items-center"
+            >
+              <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 sm:w-[58px] sm:px-0">
                 {fieldLabel(condition.field)}
               </span>
               <ConditionValueInput
@@ -839,72 +855,72 @@ export function ConnectionFilterBuilder({
       )}
 
       {requiredConditions.length > 0 && (
-        <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        <div className="flex items-center gap-2">
+          <div className="h-px w-8 bg-gray-200 dark:bg-gray-700" />
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Additional
           </span>
           <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
         </div>
       )}
 
-      {conditions.map((condition, idx) => {
-        const rowFieldOptions = availableFieldOptions.filter(
-          (option) => option.value === condition.field || isReusableField(option.value) || !usedFields.includes(option.value),
-        );
+      <div className="flex flex-wrap items-center gap-2">
+        {conditions.map((condition, idx) => {
+          const rowFieldOptions = availableFieldOptions.filter(
+            (option) => option.value === condition.field || isReusableField(option.value) || !usedFields.includes(option.value),
+          );
 
-        return (
-          <div key={condition.id}>
-            {idx > 0 && (
-              <div className="flex items-center py-0.5 pl-1">
+          return (
+            <div key={condition.id} className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center">
+              {idx > 0 && (
                 <button
                   type="button"
                   onClick={() => updateCondition(condition.id, { logic: condition.logic === 'and' ? 'or' : 'and' })}
-                  className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none"
+                  className="w-fit text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none"
                   title="Toggle AND / OR for this condition"
                 >
                   {condition.logic.toUpperCase()}
                 </button>
+              )}
+
+              <div className="flex w-full flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-50/70 p-1.5 dark:border-gray-700 dark:bg-gray-800/50 sm:w-auto sm:flex-row sm:items-center">
+                <FilterFieldSelect
+                  value={condition.field}
+                  options={rowFieldOptions}
+                  onChange={(field) => changeField(condition.id, field)}
+                />
+
+                <ConditionValueInput
+                  condition={condition}
+                  serverOptions={serverOptions}
+                  statusCodeOptions={statusCodeOptions}
+                  userOptions={userOptions}
+                  onChange={(patch) => updateCondition(condition.id, patch)}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => removeCondition(condition.id)}
+                  title={`Remove ${fieldLabel(condition.field)}`}
+                  className="self-end p-1.5 rounded text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0 sm:self-auto"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
-              <FilterFieldSelect
-                value={condition.field}
-                options={rowFieldOptions}
-                onChange={(field) => changeField(condition.id, field)}
-              />
-
-              <ConditionValueInput
-                condition={condition}
-                serverOptions={serverOptions}
-                statusCodeOptions={statusCodeOptions}
-                userOptions={userOptions}
-                onChange={(patch) => updateCondition(condition.id, patch)}
-              />
-
-              <button
-                type="button"
-                onClick={() => removeCondition(condition.id)}
-                title={`Remove ${fieldLabel(condition.field)}`}
-                className="p-1.5 rounded text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {remainingFields.length > 0 && (
-        <button
-          type="button"
-          onClick={() => onChange([...conditions, createEmptyFilterCondition()])}
-          className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-        >
-          <Plus className="h-3 w-3" /> Add condition
-        </button>
-      )}
+        {remainingFields.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onChange([...conditions, createEmptyFilterCondition()])}
+            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-blue-200 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-300 hover:text-blue-700 dark:border-blue-900/70 dark:text-blue-400 dark:hover:border-blue-800 dark:hover:text-blue-300 sm:w-auto"
+          >
+            <Plus className="h-3 w-3" /> Add condition
+          </button>
+        )}
+      </div>
     </div>
   );
 }

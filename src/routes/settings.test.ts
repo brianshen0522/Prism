@@ -4,11 +4,22 @@ import { signAccessToken } from '../lib/jwt';
 
 vi.mock('../db/prism', () => ({
   prism: {
+    backendServer: {
+      findMany: vi.fn(),
+    },
     systemSetting: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../db/gazelle', () => ({
+  gazelle: {
+    gazelleUser: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -24,6 +35,7 @@ import { prism } from '../db/prism';
 
 const adminTok = () => `Bearer ${signAccessToken({ sub: 1, username: 'admin', role: 'admin' })}`;
 const userTok = () => `Bearer ${signAccessToken({ sub: 10, username: 'user', role: 'user' })}`;
+const oauth2Tok = () => `Bearer ${signAccessToken({ sub: 30, username: 'oauth', role: 'oauth2' })}`;
 
 const MOCK_SETTING = {
   key: 'default_body_size_limit_kb',
@@ -37,7 +49,55 @@ const MOCK_SETTING = {
 let app: FastifyInstance;
 beforeAll(async () => { app = await buildApp(); });
 afterAll(async () => { await app.close(); });
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(prism.backendServer.findMany).mockResolvedValue([]);
+  vi.mocked(prism.systemSetting.findUnique).mockResolvedValue(null);
+});
+
+// ─── GET /api/settings/traffic-access ─────────────────────────────────────────
+
+describe('GET /api/settings/traffic-access', () => {
+  it('returns 401 without token', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/settings/traffic-access' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('defaults user traffic restriction to enabled', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/traffic-access',
+      headers: { authorization: userTok() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ restrict_user_traffic_to_own: true, can_view_all_traffic: false });
+  });
+
+  it('also restricts oauth2 traffic access by default', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/traffic-access',
+      headers: { authorization: oauth2Tok() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ restrict_user_traffic_to_own: true, can_view_all_traffic: false });
+  });
+
+  it('returns configured user traffic restriction', async () => {
+    vi.mocked(prism.systemSetting.findUnique).mockResolvedValue({ value: 'false' } as any);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/settings/traffic-access',
+      headers: { authorization: userTok() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ restrict_user_traffic_to_own: false, can_view_all_traffic: true });
+  });
+});
 
 // ─── GET /api/admin/settings ──────────────────────────────────────────────────
 
@@ -103,6 +163,16 @@ describe('PUT /api/admin/settings/:key', () => {
       url: '/api/admin/settings/some_key',
       headers: { authorization: adminTok(), 'content-type': 'application/json' },
       body: JSON.stringify({}),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('validates restrict_user_traffic_to_own as a boolean', async () => {
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/admin/settings/restrict_user_traffic_to_own',
+      headers: { authorization: adminTok(), 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'maybe' }),
     });
     expect(res.statusCode).toBe(400);
   });

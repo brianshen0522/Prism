@@ -5,6 +5,7 @@ import { gazelle } from '../db/gazelle';
 import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
 import { ensureConnectionShareToken } from '../lib/share';
+import { canRoleViewAllTraffic } from '../lib/settings';
 
 type SearchCond = { term: string; scopes: string[] };
 type FilterField = 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
@@ -14,6 +15,19 @@ type FilterCond = {
   values?: string[];
   term?: string;
   scopes?: string[];
+};
+type GazelleUserFilterRow = {
+  id: number;
+  username: string;
+  firstname: string | null;
+  lastname: string | null;
+  roles: { roleId: number }[];
+};
+type GazelleUserNameRow = {
+  id: number;
+  username: string;
+  firstname: string | null;
+  lastname: string | null;
 };
 
 const SCOPE_COL: Record<string, string> = {
@@ -26,7 +40,10 @@ const SCOPE_COL: Record<string, string> = {
 const ALL_SCOPE_KEYS = Object.keys(SCOPE_COL);
 
 const authenticateHook = [authenticate];
-const privileged = [authenticate, requireRole('admin', 'monitor', 'oauth2')];
+
+async function canViewAllTraffic(role: string): Promise<boolean> {
+  return canRoleViewAllTraffic(role);
+}
 
 function extractReqHost(reqHeaders: unknown): string | null {
   if (!reqHeaders || typeof reqHeaders !== 'object') return null;
@@ -37,10 +54,29 @@ function extractReqHost(reqHeaders: unknown): string | null {
   return `${scheme.split(',')[0].trim()}://${host}`;
 }
 
-function fmtConnection(c: Record<string, unknown>, serverName?: string) {
+function gazelleDisplayName(user: GazelleUserNameRow): string {
+  return [user.firstname, user.lastname].filter(Boolean).join(' ') || user.username;
+}
+
+export async function loadUserNameMap(userIds: unknown[]): Promise<Map<number, string>> {
+  const ids = [...new Set(
+    userIds.filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
+  )];
+  if (ids.length === 0) return new Map();
+
+  const users = await gazelle.gazelleUser.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, username: true, firstname: true, lastname: true },
+  });
+
+  return new Map((users as GazelleUserNameRow[]).map((user) => [user.id, gazelleDisplayName(user)]));
+}
+
+function fmtConnection(c: Record<string, unknown>, serverName?: string, userName?: string | null) {
   return {
     id: c.id,
     user_id: c.userId,
+    user_name: userName ?? null,
     server_id: c.serverId,
     server_name: serverName ?? null,
     status: c.status,
@@ -56,9 +92,9 @@ function fmtConnection(c: Record<string, unknown>, serverName?: string) {
   };
 }
 
-export function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string) {
+export function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string, userName?: string | null) {
   return {
-    ...fmtConnection(c, serverName),
+    ...fmtConnection(c, serverName, userName),
     req_headers: c.reqHeaders,
     req_body: c.reqBody ?? null,
     req_body_truncated: c.reqBodyTruncated,
@@ -165,10 +201,10 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
   fastify.get('/connections/filter-options', { preHandler: authenticateHook }, async (req, reply) => {
     const { scope } = req.query as Record<string, string>;
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
+    const canViewAll = await canViewAllTraffic(req.user.role);
 
     const where: Prisma.ConnectionWhereInput =
-      !isPrivileged && scope !== 'all'
+      !canViewAll
         ? { userId: req.user.sub }
         : {};
 
@@ -217,10 +253,10 @@ export async function connectionRoutes(fastify: FastifyInstance) {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const skip = (pageNum - 1) * limitNum;
 
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
+    const canViewAll = await canViewAllTraffic(req.user.role);
 
     const baseAnd: Prisma.ConnectionWhereInput[] = [];
-    if (!isPrivileged && scope !== 'all') baseAnd.push({ userId: req.user.sub });
+    if (!canViewAll) baseAnd.push({ userId: req.user.sub });
     if (include_system_heartbeat !== 'true') baseAnd.push({ isSystemHeartbeat: false } as any);
 
     const parsedFilters = parseFilterConditions(filters);
@@ -278,7 +314,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
         }
 
         if (filter.field === 'user_id') {
-          if (!isPrivileged) return clauses;
+          if (!canViewAll) return clauses;
           const values = Array.isArray(filter.values)
             ? filter.values.map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value))
             : [];
@@ -299,7 +335,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       const statuses  = status    ? status.split(',').filter(Boolean)    : [];
       const methods   = method    ? method.split(',').map((value) => value.toUpperCase()).filter(Boolean) : [];
 
-      if (isPrivileged && user_id) {
+      if (canViewAll && user_id) {
         const userIds = user_id.split(',').map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value));
         if (userIds.length === 1) filterClauses.push({ logic: 'and', clause: { userId: userIds[0] } });
         else if (userIds.length > 1) filterClauses.push({ logic: 'and', clause: { userId: { in: userIds } } });
@@ -359,7 +395,8 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       prism.connection.count({ where }),
     ]);
 
-    const data = rows.map((c) => fmtConnection(c as any, (c as any).server?.name));
+    const userNameMap = await loadUserNameMap(rows.map((c) => (c as any).userId));
+    const data = rows.map((c) => fmtConnection(c as any, (c as any).server?.name, userNameMap.get((c as any).userId)));
     reply.send({ data, total, page: pageNum, limit: limitNum });
   });
 
@@ -374,29 +411,37 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     if (!c) return reply.status(404).send({ error: 'Not found' });
 
-    const isPrivileged = req.user.role === 'admin' || req.user.role === 'monitor' || req.user.role === 'oauth2';
-    if (!isPrivileged && c.userId !== req.user.sub) {
+    const canViewAll = await canViewAllTraffic(req.user.role);
+    if (!canViewAll && c.userId !== req.user.sub) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
 
-    const shareToken = await ensureConnectionShareToken(c.id);
-    reply.send({ ...fmtConnectionDetail(c as any, (c as any).server?.name), share_token: shareToken });
+    const [shareToken, userNameMap] = await Promise.all([
+      ensureConnectionShareToken(c.id),
+      loadUserNameMap([c.userId]),
+    ]);
+    const userName = typeof c.userId === 'number' ? userNameMap.get(c.userId) : undefined;
+    reply.send({ ...fmtConnectionDetail(c as any, (c as any).server?.name, userName), share_token: shareToken });
   });
 
   // GET /api/users  — privileged: list all Gazelle users for filter dropdown
-  fastify.get('/users', { preHandler: privileged }, async (_req, reply) => {
+  fastify.get('/users', { preHandler: authenticateHook }, async (req, reply) => {
+    if (!(await canViewAllTraffic(req.user.role))) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
     const users = await gazelle.gazelleUser.findMany({
       where: { activated: true, blocked: false },
       select: { id: true, username: true, firstname: true, lastname: true, roles: { select: { roleId: true } } },
       orderBy: { username: 'asc' },
     });
-    const data = users.map(u => ({
+    const data = (users as GazelleUserFilterRow[]).map((u) => ({
       id:       u.id,
       username: u.username,
-      name:     [u.firstname, u.lastname].filter(Boolean).join(' ') || u.username,
-      role:     u.roles.some(r => r.roleId === 1) ? 'admin'
-              : u.roles.some(r => r.roleId === 2) ? 'monitor'
-              : u.roles.some(r => r.roleId === 3) ? 'oauth2'
+      name:     gazelleDisplayName(u),
+      role:     u.roles.some((r) => r.roleId === 1) ? 'admin'
+              : u.roles.some((r) => r.roleId === 2) ? 'monitor'
+              : u.roles.some((r) => r.roleId === 3) ? 'oauth2'
               : 'user',
     }));
     reply.send(data);

@@ -122,6 +122,7 @@ export async function tryRestoreSession(): Promise<boolean> {
 export interface ConnectionSummary {
   id: string;
   user_id: number | null;
+  user_name: string | null;
   server_id: string;
   server_name: string | null;
   status: 'pending' | 'completed' | 'error';
@@ -220,6 +221,15 @@ export function fetchConnectionFilterOptions(params?: { scope?: 'mine' | 'all' }
   if (params?.scope) q.set('scope', params.scope);
   const suffix = q.toString() ? `?${q.toString()}` : '';
   return json<ConnectionFilterOptions>(`/connections/filter-options${suffix}`);
+}
+
+export interface TrafficAccessPolicy {
+  restrict_user_traffic_to_own: boolean;
+  can_view_all_traffic: boolean;
+}
+
+export function fetchTrafficAccessPolicy() {
+  return json<TrafficAccessPolicy>('/settings/traffic-access');
 }
 
 export function clearAllTraffic() {

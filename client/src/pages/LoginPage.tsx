@@ -18,7 +18,7 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate('/connections', { replace: true });
+      navigate('/traffic', { replace: true });
     } catch (err) {
       setError((err as Error).message || 'Login failed');
     } finally {

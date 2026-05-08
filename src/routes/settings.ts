@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prism } from '../db/prism';
 import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
+import { canRoleViewAllTraffic, shouldRestrictUserTrafficToOwn } from '../lib/settings';
 
 const adminOnly = [authenticate, requireRole('admin')];
 
@@ -64,12 +65,27 @@ function validateKnownSetting(key: string, value: string): string | null {
       if (trimmed.length > 120) return 'connectathon_name must be 120 characters or fewer';
       return null;
 
+    case 'restrict_user_traffic_to_own':
+      if (!['true', 'false'].includes(trimmed.toLowerCase())) {
+        return 'restrict_user_traffic_to_own must be true or false';
+      }
+      return null;
+
     default:
       return null;
   }
 }
 
 export async function settingsRoutes(fastify: FastifyInstance) {
+  // GET /api/settings/traffic-access
+  fastify.get('/settings/traffic-access', { preHandler: authenticate }, async (req, reply) => {
+    const restrictUserTrafficToOwn = await shouldRestrictUserTrafficToOwn();
+    reply.send({
+      restrict_user_traffic_to_own: restrictUserTrafficToOwn,
+      can_view_all_traffic: await canRoleViewAllTraffic(req.user.role),
+    });
+  });
+
   // GET /api/admin/settings
   fastify.get('/admin/settings', { preHandler: adminOnly }, async (_req, reply) => {
     const rows = await prism.systemSetting.findMany({ orderBy: { key: 'asc' } });

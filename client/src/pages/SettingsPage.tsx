@@ -20,6 +20,7 @@ const SUGGESTIONS = [
   { key: 'dashboard_chart_hours', label: 'Dashboard chart window (hours)', hint: 'How many hours of history the traffic chart covers. Default: 24.', range: 'Integer between 1 and 168.', placeholder: '24', type: 'number' },
   { key: 'dashboard_chart_bucket_minutes', label: 'Dashboard chart bucket size (minutes)', hint: 'Granularity of each bar in the traffic chart. E.g. 10, 30, 60, 120. Default: 60.', range: 'Integer between 1 and 1440.', placeholder: '60', type: 'number' },
   { key: 'connectathon_name', label: 'Connectathon name', hint: 'Displayed in the UI header.', range: '1-120 characters.', placeholder: 'IHE Connectathon', type: 'text' },
+  { key: 'restrict_user_traffic_to_own', label: 'Restrict user traffic to own data', hint: 'When true, non-admin traffic users only see their own Traffic data. Default: true.', range: 'true or false.', placeholder: 'true', type: 'text' },
 ];
 
 function getSuggestion(key: string) {
@@ -50,6 +51,9 @@ function validateSettingValue(key: string, value: string): string | null {
     case 'connectathon_name':
       if (!trimmed) return 'Cannot be empty.';
       if (trimmed.length > 120) return 'Must be 120 characters or fewer.';
+      return null;
+    case 'restrict_user_traffic_to_own':
+      if (!['true', 'false'].includes(trimmed.toLowerCase())) return 'Must be true or false.';
       return null;
     default:
       return null;

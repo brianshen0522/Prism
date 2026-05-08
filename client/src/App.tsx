@@ -8,10 +8,9 @@ import { ConnectionViewPage } from './pages/ConnectionViewPage';
 import { OAuthPipelineViewPage } from './pages/OAuthPipelineViewPage';
 import { IntegrationGuidePage } from './pages/IntegrationGuidePage';
 import { IntegrationGuideDetailPage } from './pages/IntegrationGuideDetailPage';
-import { MyConnectionsPage } from './pages/MyConnectionsPage';
 import { ConnectionDetailPage } from './pages/ConnectionDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { GlobalTrafficPage } from './pages/GlobalTrafficPage';
+import { TrafficPage } from './pages/TrafficPage';
 import { OAuthPipelineDetailPage } from './pages/OAuthPipelineDetailPage';
 import { ServersPage } from './pages/ServersPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -34,13 +33,13 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route index element={<DefaultRedirect />} />
-          <Route path="/connections" element={<MyConnectionsPage />} />
+          <Route path="/connections" element={<Navigate to="/traffic" replace />} />
           <Route path="/guide" element={<IntegrationGuidePage />} />
           <Route path="/guide/:id" element={<IntegrationGuideDetailPage />} />
           <Route path="/connections/:id" element={<ConnectionDetailPage />} />
           <Route path="/token" element={<TokenPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/traffic" element={<GlobalTrafficPage />} />
+          <Route path="/traffic" element={<TrafficPage />} />
           <Route path="/oauth/pipelines/:id" element={<OAuthPipelineDetailPage />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/settings" element={<SettingsPage />} />

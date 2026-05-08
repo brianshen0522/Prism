@@ -1,5 +1,5 @@
 import { useState, useContext, createContext, useEffect, useRef, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Link, Search, Server, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Link, Search, Server, User, X } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
@@ -384,6 +384,15 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
         </div>
         <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
           <Server className="h-3.5 w-3.5" />{c.server_name ?? c.server_id}
+        </div>
+        <div
+          className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
+          title={c.user_id != null ? `${c.user_name ?? `User ${c.user_id}`} (#${c.user_id})` : undefined}
+        >
+          <User className="h-3.5 w-3.5" />
+          {c.user_id != null
+            ? (c.user_name ?? `User ${c.user_id}`)
+            : <span className="text-gray-300 dark:text-gray-600">anon</span>}
         </div>
         <Badge className={statusColor(c.status)}>{c.status}</Badge>
         {c.res_status_code && <Badge className={httpStatusColor(c.res_status_code)}>HTTP {c.res_status_code}</Badge>}

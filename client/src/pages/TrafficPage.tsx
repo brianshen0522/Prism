@@ -9,6 +9,7 @@ import {
   fetchDashboardServers,
   fetchOAuthFilterOptions,
   fetchOAuthPipelines,
+  fetchTrafficAccessPolicy,
   fetchUsers,
   type ConnectionSummary,
   type OAuthPipelineListItem,
@@ -74,7 +75,14 @@ function TrafficRow({ c, isNew, selected, onSelect }: {
       onClick={() => onSelect(c.id)}
     >
       <td className={`sticky left-0 z-10 px-4 py-2.5 text-xs whitespace-nowrap ${selected ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-white dark:bg-gray-900'} text-gray-400 dark:text-gray-500`}>{fmtDate(c.req_timestamp)}</td>
-      <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{c.user_id ?? <span className="text-gray-300 dark:text-gray-600">anon</span>}</td>
+      <td
+        className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap truncate"
+        title={c.user_id != null ? `${c.user_name ?? `User ${c.user_id}`} (#${c.user_id})` : undefined}
+      >
+        {c.user_id != null
+          ? (c.user_name ?? `User ${c.user_id}`)
+          : <span className="text-gray-300 dark:text-gray-600">anon</span>}
+      </td>
       <td className="px-4 py-2.5"><Badge className={methodColor(c.req_method)}>{c.req_method}</Badge></td>
       <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_host ? `${c.req_host}${c.req_url}` : c.req_url}>
         <div className="flex items-center gap-2">
@@ -209,9 +217,9 @@ function OAuthPipelineMobileCard({ pipeline, onSelect }: { pipeline: OAuthPipeli
   );
 }
 
-// ─── GlobalTrafficPage ────────────────────────────────────────────────────────
+// ─── TrafficPage ──────────────────────────────────────────────────────────────
 
-export function GlobalTrafficPage() {
+export function TrafficPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
@@ -287,7 +295,13 @@ export function GlobalTrafficPage() {
   const sort      = searchParams.get('sort')  ?? 'req_timestamp';
   const order     = (searchParams.get('order') ?? 'desc') as 'asc' | 'desc';
 
-  const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'monitor' || currentUser?.role === 'oauth2';
+  const { data: trafficAccessPolicy } = useQuery({
+    queryKey: ['traffic-access-policy', currentUser?.sub, currentUser?.role],
+    queryFn: fetchTrafficAccessPolicy,
+    enabled: !!currentUser,
+  });
+  const canViewAllTraffic = trafficAccessPolicy?.can_view_all_traffic ?? false;
+  const trafficScope = canViewAllTraffic ? 'all' : 'mine';
   const handleRequiredChange = (next: FilterCondition[]) => setRequiredConditions(syncStatusCodeRequired(next));
 
   const handleSort = (col: string) =>
@@ -307,6 +321,12 @@ export function GlobalTrafficPage() {
     setSelectedId(null);
   }, [view]);
 
+  useEffect(() => {
+    if (canViewAllTraffic) return;
+    setConditions((current) => current.filter((condition) => condition.field !== 'user_id'));
+    setOauthParticipantUserIds([]);
+  }, [canViewAllTraffic]);
+
   const resetAll = () => {
     setRequiredConditions(createGlobalRequiredConditions());
     setConditions([createEmptyFilterCondition()]);
@@ -320,14 +340,14 @@ export function GlobalTrafficPage() {
   };
 
   const { data: servers = [] } = useQuery({ queryKey: ['dashboard-servers'], queryFn: fetchDashboardServers });
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: fetchUsers, enabled: isPrivileged });
+  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: fetchUsers, enabled: canViewAllTraffic });
   const { data: filterOptions } = useQuery({
-    queryKey: ['connection-filter-options', 'global'],
-    queryFn: () => fetchConnectionFilterOptions({ scope: 'all' }),
+    queryKey: ['connection-filter-options', trafficScope],
+    queryFn: () => fetchConnectionFilterOptions({ scope: trafficScope }),
     enabled: view === 'raw',
   });
   const { data: oauthFilterOptions } = useQuery({
-    queryKey: ['oauth-filter-options'],
+    queryKey: ['oauth-filter-options', trafficScope, currentUser?.sub],
     queryFn: fetchOAuthFilterOptions,
     enabled: view === 'oauth',
   });
@@ -343,7 +363,7 @@ export function GlobalTrafficPage() {
 
   const queryKey = [
     'connections-global',
-    filtersString ?? '', showHeartbeatTraffic ? 'heartbeat' : 'default', sort, order,
+    trafficScope, filtersString ?? '', showHeartbeatTraffic ? 'heartbeat' : 'default', sort, order,
   ];
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isFetching } = useInfiniteQuery({
@@ -351,6 +371,7 @@ export function GlobalTrafficPage() {
     queryFn: ({ pageParam }) => fetchConnections({
       page: pageParam, limit: LIMIT,
       filters: filtersString,
+      scope: trafficScope,
       include_system_heartbeat: showHeartbeatTraffic,
       sort, order,
     }),
@@ -372,6 +393,7 @@ export function GlobalTrafficPage() {
   } = useInfiniteQuery({
     queryKey: [
       'oauth-pipelines',
+      trafficScope,
       debouncedOauthAccessToken,
       oauthParticipantUserIds.join(','),
       oauthAuthServerIds.join(','),
@@ -428,7 +450,8 @@ export function GlobalTrafficPage() {
     }
   }, [qc, queryKey]);
 
-  useWebSocket({ channels: ['traffic:all'], onMessage: handleWsMessage, enabled: live && view === 'raw' });
+  const wsChannel = canViewAllTraffic ? 'traffic:all' : (currentUser ? `traffic:user:${currentUser.sub}` : '');
+  useWebSocket({ channels: wsChannel ? [wsChannel] : [], onMessage: handleWsMessage, enabled: !!wsChannel && live && view === 'raw' });
 
   const clearTrafficMut = useMutation({
     mutationFn: clearAllTraffic,
@@ -451,7 +474,7 @@ export function GlobalTrafficPage() {
       <div className="mx-auto flex w-full gap-4 items-start">
       <div className="min-w-0 flex-1 space-y-4">
         <PageHeader
-          title="Global Traffic"
+          title="Traffic"
           description={
             view === 'raw' && data
               ? `${allConnections.length.toLocaleString()} / ${total.toLocaleString()} connections`
@@ -538,7 +561,7 @@ export function GlobalTrafficPage() {
               serverOptions={serverOptions}
               statusCodeOptions={statusCodeOptions}
               userOptions={userOptions}
-              allowUserFilter={isPrivileged}
+              allowUserFilter={canViewAllTraffic}
               onRequiredChange={handleRequiredChange}
               onChange={setConditions}
             />
@@ -570,22 +593,24 @@ export function GlobalTrafficPage() {
                   className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 />
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Participant user
-                </label>
-                <MultiSelect
-                  placeholder="users"
-                  options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
-                    value: String(user.id),
-                    label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
-                  }))}
-                  selected={oauthParticipantUserIds}
-                  onChange={setOauthParticipantUserIds}
-                  filterable
-                  searchPlaceholder="Filter users..."
-                />
-              </div>
+              {canViewAllTraffic && (
+                <div>
+                    <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Participant user
+                    </label>
+                    <MultiSelect
+                      placeholder="users"
+                      options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
+                        value: String(user.id),
+                        label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
+                      }))}
+                      selected={oauthParticipantUserIds}
+                      onChange={setOauthParticipantUserIds}
+                      filterable
+                      searchPlaceholder="Filter users..."
+                    />
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Authentication server
@@ -679,7 +704,7 @@ export function GlobalTrafficPage() {
                 serverOptions={serverOptions}
                 statusCodeOptions={statusCodeOptions}
                 userOptions={userOptions}
-                allowUserFilter={isPrivileged}
+                allowUserFilter={canViewAllTraffic}
                 onRequiredChange={handleRequiredChange}
                 onChange={setConditions}
               />
@@ -709,22 +734,24 @@ export function GlobalTrafficPage() {
                   className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 />
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Participant user
-                </label>
-                <MultiSelect
-                  placeholder="users"
-                  options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
-                    value: String(user.id),
-                    label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
-                  }))}
-                  selected={oauthParticipantUserIds}
-                  onChange={setOauthParticipantUserIds}
-                  filterable
-                  searchPlaceholder="Filter users..."
-                />
-              </div>
+              {canViewAllTraffic && (
+                <div>
+                    <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Participant user
+                    </label>
+                    <MultiSelect
+                      placeholder="users"
+                      options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
+                        value: String(user.id),
+                        label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
+                      }))}
+                      selected={oauthParticipantUserIds}
+                      onChange={setOauthParticipantUserIds}
+                      filterable
+                      searchPlaceholder="Filter users..."
+                    />
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Authentication server
@@ -820,10 +847,10 @@ export function GlobalTrafficPage() {
               />
               ) : (
                 <>
-                  <table className="min-w-[1320px] w-full table-fixed text-sm">
+                  <table className="min-w-[1400px] w-full table-fixed text-sm">
                     <colgroup>
                       <col className="w-[168px]" />
-                      <col className="w-[92px]" />
+                      <col className="w-[168px]" />
                       <col className="w-[96px]" />
                       <col />
                       <col className="w-[140px]" />
@@ -836,7 +863,7 @@ export function GlobalTrafficPage() {
                     <thead>
                       <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                         <SortTh col="req_timestamp"  label="Time"     sort={sort} order={order} onSort={handleSort} />
-                        <th className="px-4 py-3 font-medium">User</th>
+                        <th className="px-4 py-3 font-medium">Participant</th>
                         <th className="px-4 py-3 font-medium">Method</th>
                         <th className="px-4 py-3 font-medium">URL</th>
                         <th className="px-4 py-3 font-medium">Server</th>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound, List, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor } from 'lucide-react';
+import { LogOut, KeyRound, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type Theme } from '../store/theme';
 import { logout } from '../lib/api';
@@ -24,7 +24,6 @@ export function NavBar() {
   const role = user?.role;
   const isAdmin = role === 'admin';
   const isMonitor = role === 'admin' || role === 'monitor';
-  const isOAuth2 = role === 'oauth2';
 
   const { theme, setTheme } = useThemeStore();
   const ThemeIcon = THEME_ICON[theme];
@@ -34,11 +33,9 @@ export function NavBar() {
     ...(isMonitor
       ? [
           { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { to: '/traffic', label: 'Global Traffic', icon: Globe },
+          { to: '/traffic', label: 'Traffic', icon: Globe },
         ]
-      : isOAuth2
-        ? [{ to: '/traffic', label: 'Global Traffic', icon: Globe }]
-        : [{ to: '/connections', label: 'My Connections', icon: List }]),
+      : [{ to: '/traffic', label: 'Traffic', icon: Globe }]),
     { to: '/token', label: 'My Token', icon: KeyRound },
     { to: '/guide', label: 'Integration Guide', icon: BookOpen },
     ...(isAdmin ? adminLinks : []),

@@ -9,6 +9,7 @@ import {
   reconcileOAuthPipeline,
 } from '../oauth/reconcile';
 import { ensureConnectionShareTokens, ensurePipelineShareToken } from '../lib/share';
+import { canRoleViewAllTraffic } from '../lib/settings';
 
 type PipelineDetail = NonNullable<Awaited<ReturnType<typeof buildOAuthPipelineDetail>>>;
 
@@ -28,8 +29,8 @@ function parseCsvValues(input?: string) {
 
 export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/oauth/filter-options', { preHandler: [authenticate] }, async (request, reply) => {
-    const isPrivileged = request.user.role === 'admin' || request.user.role === 'monitor' || request.user.role === 'oauth2';
-    return reply.send(await buildOAuthFilterOptions(isPrivileged ? undefined : request.user.sub));
+    const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
+    return reply.send(await buildOAuthFilterOptions(canViewAllTraffic ? undefined : request.user.sub));
   });
 
   fastify.get('/oauth/pipelines', { preHandler: [authenticate] }, async (request, reply) => {
@@ -46,9 +47,9 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
 
     const pageNum = Math.max(1, parseInt(page, 10));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
-    const isPrivileged = request.user.role === 'admin' || request.user.role === 'monitor' || request.user.role === 'oauth2';
+    const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
 
-    const participantUserIds = (isPrivileged ? parseCsvValues(participant_user_id) : [String(request.user.sub)])
+    const participantUserIds = (canViewAllTraffic ? parseCsvValues(participant_user_id) : [String(request.user.sub)])
       .map((value) => parseInt(value, 10))
       .filter((value) => !Number.isNaN(value));
 
@@ -99,8 +100,8 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = request.params as { id: string };
     const result = await buildOAuthPipelineDetail(id);
     if (!result) return reply.status(404).send({ error: 'OAuth pipeline not found' });
-    const isPrivileged = request.user.role === 'admin' || request.user.role === 'monitor' || request.user.role === 'oauth2';
-    if (!isPrivileged && result.summary.participant_user?.id !== request.user.sub) {
+    const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
+    if (!canViewAllTraffic && result.summary.participant_user?.id !== request.user.sub) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     const [shareToken, connectionShareTokens] = await Promise.all([

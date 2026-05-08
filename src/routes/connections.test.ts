@@ -6,10 +6,25 @@ import { signAccessToken } from '../lib/jwt';
 vi.mock('../db/prism', () => ({
   prism: {
     $queryRawUnsafe: vi.fn(),
+    systemSetting: {
+      findUnique: vi.fn(),
+    },
+    backendServer: {
+      findMany: vi.fn(),
+    },
     connection: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       count: vi.fn(),
+      update: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../db/gazelle', () => ({
+  gazelle: {
+    gazelleUser: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -21,11 +36,13 @@ vi.mock('@fastify/static', () => ({
 
 import { buildApp } from '../app';
 import { prism } from '../db/prism';
+import { gazelle } from '../db/gazelle';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 
 const adminToken = () => `Bearer ${signAccessToken({ sub: 1, username: 'admin', role: 'admin' })}`;
 const monitorToken = () => `Bearer ${signAccessToken({ sub: 2, username: 'mon', role: 'monitor' })}`;
+const oauth2Token = (sub = 30) => `Bearer ${signAccessToken({ sub, username: 'oauth', role: 'oauth2' })}`;
 const userToken = (sub = 10) => `Bearer ${signAccessToken({ sub, username: 'user', role: 'user' })}`;
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -49,6 +66,7 @@ const MOCK_CONN = {
   resBody: '{"resourceType":"Bundle"}',
   resBodyTruncated: false,
   durationMs: 200,
+  shareToken: 'share-conn-1',
   createdAt: new Date('2024-01-01T10:00:00Z'),
   server: { name: 'HAPI FHIR' },
 };
@@ -62,9 +80,14 @@ afterAll(async () => { await app.close(); });
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prism.$queryRawUnsafe).mockResolvedValue([]);
+  vi.mocked(prism.systemSetting.findUnique).mockResolvedValue(null);
+  vi.mocked(prism.backendServer.findMany).mockResolvedValue([]);
   vi.mocked(prism.connection.count).mockResolvedValue(1);
   vi.mocked(prism.connection.findMany).mockResolvedValue([MOCK_CONN] as any);
   vi.mocked(prism.connection.findUnique).mockResolvedValue(MOCK_CONN as any);
+  vi.mocked(gazelle.gazelleUser.findMany).mockResolvedValue([
+    { id: 10, username: 'alice', firstname: 'Alice', lastname: 'Chen', roles: [] },
+  ] as any);
 });
 
 function findClause(where: any, key: string): any {
@@ -112,6 +135,7 @@ describe('GET /api/connections', () => {
       req_method: 'GET',
       req_url: '/fhir/Patient',
       server_name: 'HAPI FHIR',
+      user_name: 'Alice Chen',
     });
   });
 
@@ -123,6 +147,42 @@ describe('GET /api/connections', () => {
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
     expect(findClause((callArg as any).where, 'userId')).toBe(10);
+  });
+
+  it('scopes query to current user for oauth2 users when restriction is enabled', async () => {
+    await app.inject({
+      method: 'GET',
+      url: '/api/connections?scope=all',
+      headers: { authorization: oauth2Token(30) },
+    });
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'userId')).toBe(30);
+  });
+
+  it('allows user role to request all traffic when restriction setting is disabled', async () => {
+    vi.mocked(prism.systemSetting.findUnique).mockResolvedValue({ value: 'false' } as any);
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/connections?scope=all',
+      headers: { authorization: userToken(10) },
+    });
+
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'userId')).toBeUndefined();
+  });
+
+  it('allows oauth2 role to request all traffic when restriction setting is disabled', async () => {
+    vi.mocked(prism.systemSetting.findUnique).mockResolvedValue({ value: 'false' } as any);
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/connections?scope=all',
+      headers: { authorization: oauth2Token(30) },
+    });
+
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'userId')).toBeUndefined();
   });
 
   it('does not scope query for admin', async () => {
@@ -207,7 +267,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: adminToken() },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
-    expect((callArg as any).where).toHaveProperty('OR');
+    expect(findClause((callArg as any).where, 'OR')).toBeDefined();
     expect(findClause((callArg as any).where, 'reqMethod')).toBe('GET');
     expect(findClause((callArg as any).where, 'status')).toBe('error');
   });
@@ -269,6 +329,7 @@ describe('GET /api/connections/:id', () => {
     expect(body).toHaveProperty('req_headers');
     expect(body).toHaveProperty('res_body');
     expect(body).toHaveProperty('res_status_code', 200);
+    expect(body).toHaveProperty('user_name', 'Alice Chen');
   });
 
   it('allows admin to view any connection', async () => {

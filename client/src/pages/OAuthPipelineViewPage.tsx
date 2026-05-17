@@ -31,6 +31,10 @@ export function OAuthPipelineViewPage() {
   });
 
   const idToToken = data?.connection_share_tokens ?? {};
+  const participantName = data?.summary.participant_institution?.name
+    ?? data?.summary.participant_user?.name
+    ?? data?.summary.participant_user?.username
+    ?? 'Unknown participant';
 
   return (
     <ViewLayout>
@@ -52,7 +56,7 @@ export function OAuthPipelineViewPage() {
                 <div>
                   <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">OAuth Pipeline</h1>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Started {fmtDate(data.summary.started_at)} · {data.summary.participant_user?.name ?? data.summary.participant_user?.username ?? 'Unknown participant'}
+                    Started {fmtDate(data.summary.started_at)} · {participantName}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -63,7 +67,17 @@ export function OAuthPipelineViewPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
-                <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Participant</p><p className="text-sm font-medium">{data.summary.participant_user?.name ?? data.summary.participant_user?.username ?? '—'}</p></CardContent></Card>
+                <Card>
+                  <CardContent className="p-4 space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-gray-400">Participant Institution</p>
+                    <p className="text-sm font-medium">{data.summary.participant_institution?.name ?? '—'}</p>
+                    {data.summary.participant_user && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        user: {data.summary.participant_user.name ?? data.summary.participant_user.username}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
                 <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Authentication Server</p><p className="text-sm font-medium">{data.summary.authentication_server?.name ?? '—'}</p></CardContent></Card>
                 <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Access Token</p><p className="font-mono text-sm">{data.summary.access_token.fingerprint}</p></CardContent></Card>
               </div>

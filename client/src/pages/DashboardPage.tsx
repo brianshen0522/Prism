@@ -122,7 +122,14 @@ function RecentPipelineRow({ pipeline }: { pipeline: OAuthPipelineListItem }) {
     >
       <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500">{fmtDate(pipeline.started_at)}</td>
       <td className="px-4 py-2.5 text-xs text-gray-700 dark:text-gray-300">
-        {pipeline.participant_user?.name || pipeline.participant_user?.username || '—'}
+        <div className="space-y-1">
+          <div>{pipeline.participant_institution?.name || '—'}</div>
+          {pipeline.participant_user && (
+            <div className="text-[11px] text-gray-400 dark:text-gray-500">
+              user: {pipeline.participant_user.name || pipeline.participant_user.username}
+            </div>
+          )}
+        </div>
       </td>
       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
         {pipeline.authentication_server?.name ?? '—'}
@@ -152,8 +159,13 @@ function RecentPipelineMobileCard({ pipeline }: { pipeline: OAuthPipelineListIte
         <div className="min-w-0">
           <p className="text-xs text-gray-400 dark:text-gray-500">{fmtDate(pipeline.started_at)}</p>
           <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">
-            {pipeline.participant_user?.name || pipeline.participant_user?.username || '—'}
+            {pipeline.participant_institution?.name || '—'}
           </p>
+          {pipeline.participant_user && (
+            <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+              user: {pipeline.participant_user.name || pipeline.participant_user.username}
+            </p>
+          )}
           <p className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
             {pipeline.access_token_fingerprint}
           </p>
@@ -370,7 +382,7 @@ export function DashboardPage() {
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     <th className="px-4 py-3 font-medium">Started</th>
-                    <th className="px-4 py-3 font-medium">Participant</th>
+                    <th className="px-4 py-3 font-medium">Institution</th>
                     <th className="px-4 py-3 font-medium">Auth Server</th>
                     <th className="px-4 py-3 font-medium">Token</th>
                     <th className="px-4 py-3 font-medium text-center">Calls</th>

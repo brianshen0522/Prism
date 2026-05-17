@@ -12,6 +12,24 @@ function decodeJwt(token: string) {
   }
 }
 
+function authUserFromToken(accessToken: string, institution?: { id: number; name: string; keyword?: string | null } | null) {
+  const payload = decodeJwt(accessToken);
+  if (!payload) return null;
+
+  const institutionId = institution?.id ?? payload.institutionId;
+  const institutionName = institution?.name ?? payload.institutionName;
+  if (typeof institutionId !== 'number' || typeof institutionName !== 'string') return null;
+
+  return {
+    sub: payload.sub,
+    username: payload.username,
+    role: payload.role,
+    institutionId,
+    institutionName,
+    institutionKeyword: institution?.keyword ?? null,
+  };
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!rt) return null;
@@ -31,13 +49,12 @@ async function refreshAccessToken(): Promise<string | null> {
   const data = await res.json();
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
 
-  const payload = decodeJwt(data.access_token);
-  if (payload) {
-    useAuthStore.getState().setAuth(data.access_token, {
-      sub: payload.sub,
-      username: payload.username,
-      role: payload.role,
-    });
+  const user = authUserFromToken(data.access_token, data.institution);
+  if (user) {
+    useAuthStore.getState().setAuth(data.access_token, user);
+  }
+  if (data.institution_changed === true) {
+    useAuthStore.getState().markParticipantTokenStale();
   }
 
   return data.access_token as string;
@@ -89,13 +106,9 @@ export async function login(username: string, password: string) {
   }
   const data = await res.json();
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
-  const payload = decodeJwt(data.access_token);
-  if (payload) {
-    useAuthStore.getState().setAuth(data.access_token, {
-      sub: payload.sub,
-      username: payload.username,
-      role: payload.role,
-    });
+  const user = authUserFromToken(data.access_token, data.institution);
+  if (user) {
+    useAuthStore.getState().setAuth(data.access_token, user);
   }
   return data;
 }
@@ -123,6 +136,8 @@ export interface ConnectionSummary {
   id: string;
   user_id: number | null;
   user_name: string | null;
+  institution_id: number | null;
+  institution_name: string | null;
   server_id: string;
   server_name: string | null;
   status: 'pending' | 'completed' | 'error';
@@ -134,6 +149,9 @@ export interface ConnectionSummary {
   res_status_code: number | null;
   res_body_size: number | null;
   duration_ms: number | null;
+  participant_token_present: boolean;
+  participant_token_valid: boolean | null;
+  participant_token_invalid_reason: 'expired' | 'revoked' | null;
   is_system_heartbeat: boolean;
 }
 
@@ -162,6 +180,7 @@ export function fetchConnections(params: {
   status?: string | string[];
   method?: string | string[];
   user_id?: string;
+  institution_id?: string;
   from?: string;
   to?: string;
   filters?: string;
@@ -184,6 +203,7 @@ export function fetchConnections(params: {
   const st = asStr(params.status);    if (st) q.set('status', st);
   const mt = asStr(params.method);    if (mt) q.set('method', mt);
   if (params.user_id) q.set('user_id', params.user_id);
+  if (params.institution_id) q.set('institution_id', params.institution_id);
   if (params.from) q.set('from', params.from);
   if (params.to) q.set('to', params.to);
   if (params.filters) q.set('filters', params.filters);
@@ -208,8 +228,58 @@ export interface UserSummary {
   role: 'admin' | 'monitor' | 'oauth2' | 'user';
 }
 
-export function fetchUsers() {
-  return json<UserSummary[]>('/users');
+export function fetchUsers(params?: { institution_id?: string[] }) {
+  const q = new URLSearchParams();
+  if (params?.institution_id?.length) q.set('institution_id', params.institution_id.join(','));
+  const suffix = q.toString() ? `?${q}` : '';
+  return json<UserSummary[]>(`/users${suffix}`);
+}
+
+export interface AdminUserInstitution {
+  id: number;
+  name: string;
+  keyword: string | null;
+  activated: boolean;
+}
+
+export interface AdminUserParticipantToken {
+  exists: boolean;
+  valid: boolean;
+  expires_at: string | null;
+  institution_id: number | null;
+  institution_mismatch: boolean;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  firstname: string | null;
+  lastname: string | null;
+  name: string;
+  email: string | null;
+  role: 'admin' | 'monitor' | 'oauth2' | 'user';
+  activated: boolean;
+  blocked: boolean;
+  last_login: string | null;
+  creation_date: string | null;
+  institution: AdminUserInstitution | null;
+  participant_token: AdminUserParticipantToken;
+  connection_count: number;
+  last_connection_at: string | null;
+}
+
+export function fetchAdminUsers() {
+  return json<AdminUser[]>('/admin/users');
+}
+
+export interface InstitutionOption {
+  id: number;
+  name: string;
+  keyword: string | null;
+}
+
+export function fetchInstitutions() {
+  return json<InstitutionOption[]>('/institutions');
 }
 
 export interface ConnectionFilterOptions {
@@ -251,6 +321,12 @@ export interface OAuthPipelineListItem {
     id: number;
     username: string;
     name: string;
+  } | null;
+  participant_institution_id: number | null;
+  participant_institution: {
+    id: number;
+    name: string;
+    keyword: string | null;
   } | null;
   authentication_server: {
     id: string;
@@ -324,6 +400,12 @@ export interface OAuthPipelineDetailResponse {
       id: number;
       username: string;
       name: string;
+    } | null;
+    participant_institution_id: number | null;
+    participant_institution: {
+      id: number;
+      name: string;
+      keyword: string | null;
     } | null;
     authentication_server: {
       id: string;
@@ -399,6 +481,11 @@ export interface OAuthFilterOptions {
     username: string;
     name: string;
   }>;
+  participant_institutions: Array<{
+    id: number;
+    name: string;
+    keyword: string | null;
+  }>;
   authentication_servers: Array<{
     id: string;
     name: string;
@@ -414,6 +501,7 @@ export function fetchOAuthPipelines(params: {
   limit?: number;
   access_token?: string;
   participant_user_id?: string | string[];
+  participant_institution_id?: string | string[];
   legal?: 'all' | 'legal' | 'illegal';
   success?: 'all' | 'success' | 'failed';
   authentication_server_id?: string | string[];
@@ -425,6 +513,7 @@ export function fetchOAuthPipelines(params: {
   const asStr = (v: string | string[] | undefined) => Array.isArray(v) ? v.join(',') : (v ?? '');
   if (params.access_token) q.set('access_token', params.access_token);
   const pu = asStr(params.participant_user_id); if (pu) q.set('participant_user_id', pu);
+  const pi = asStr(params.participant_institution_id); if (pi) q.set('participant_institution_id', pi);
   if (params.legal) q.set('legal', params.legal);
   if (params.success) q.set('success', params.success);
   const auth = asStr(params.authentication_server_id); if (auth) q.set('authentication_server_id', auth);
@@ -447,6 +536,7 @@ export interface ParticipantToken {
   expires_at: string;
   created_at: string;
   header_name: string;
+  institution_id: number | null;
 }
 
 export interface ParticipantTokenValidation {
@@ -454,8 +544,10 @@ export interface ParticipantTokenValidation {
   valid: boolean;
   expires_at: string | null;
   header_name: string;
+  institution_id: number | null;
+  belongs_to_current_organization: boolean;
   belongs_to_current_user: boolean;
-  reason: 'valid' | 'expired' | 'not_found';
+  reason: 'valid' | 'expired' | 'revoked' | 'not_found';
 }
 
 export interface ParticipantTokenCredentials {

@@ -13,6 +13,7 @@ export default defineConfig({
       PROXY_DB_PASS: 'test',
       JWT_SECRET: 'test_jwt_secret_at_least_32_characters_long',
       JWT_REFRESH_SECRET: 'test_jwt_refresh_secret_at_least_32_chars',
+      PARTICIPANT_TOKEN_SECRET: 'test_participant_token_secret_32_chars',
     },
   },
 });

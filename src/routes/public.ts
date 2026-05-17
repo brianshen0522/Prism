@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { prism } from '../db/prism';
-import { fmtConnectionDetail, loadUserNameMap } from './connections';
+import { fmtConnectionDetail, loadInstitutionNameMap, loadUserNameMap } from './connections';
 import { buildOAuthPipelineDetail } from '../oauth/reconcile';
 import { ensureConnectionShareTokens } from '../lib/share';
 
@@ -23,9 +23,15 @@ export const publicRoutes: FastifyPluginAsync = async (fastify) => {
       include: { server: { select: { name: true } } },
     });
     if (!c) return reply.status(404).send({ error: 'Not found' });
-    const userNameMap = await loadUserNameMap([c.userId]);
+    const [userNameMap, institutionNameMap] = await Promise.all([
+      loadUserNameMap([c.userId]),
+      loadInstitutionNameMap([(c as any).institutionId]),
+    ]);
     const userName = typeof c.userId === 'number' ? userNameMap.get(c.userId) : undefined;
-    return reply.send(fmtConnectionDetail(c as any, (c as any).server?.name, userName));
+    const institutionName = typeof (c as any).institutionId === 'number'
+      ? institutionNameMap.get((c as any).institutionId)
+      : undefined;
+    return reply.send(fmtConnectionDetail(c as any, (c as any).server?.name, userName, institutionName));
   });
 
   fastify.get('/public/oauth/pipelines/:shareToken', async (req, reply) => {

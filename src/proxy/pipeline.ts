@@ -7,9 +7,24 @@ import type { BackendServer } from '@prisma/client';
 import { prism } from '../db/prism';
 import { verifyAccessToken } from '../lib/jwt';
 import { wsManager } from '../ws/manager';
-import { DEFAULT_HEADER } from '../routes/token';
+import {
+  DEFAULT_PARTICIPANT_TOKEN_HEADER,
+  TokenExpiredError,
+  decodeParticipantJwt,
+  verifyParticipantJwt,
+} from '../lib/participant-token';
 import { classifyOAuthConnection } from '../oauth/extract';
 import { enqueueOAuthReconcile } from '../oauth/reconcile';
+
+type ParticipantTokenInvalidReason = 'expired' | 'revoked' | null;
+
+interface IdentityResult {
+  userId: number | null;
+  institutionId: number | null;
+  username: string | null;
+  participantTokenValid: boolean | null;
+  participantTokenInvalidReason: ParticipantTokenInvalidReason;
+}
 
 // ─── Cached participant-token header name (refreshed every 60 s) ──────────────
 
@@ -18,15 +33,20 @@ let _headerCache: { name: string; at: number } | null = null;
 async function getParticipantHeader(): Promise<string> {
   if (_headerCache && Date.now() - _headerCache.at < 60_000) return _headerCache.name;
   const s = await prism.systemSetting.findUnique({ where: { key: 'participant_token_header' } });
-  const name = (s?.value || DEFAULT_HEADER).toLowerCase();
+  const name = (s?.value || DEFAULT_PARTICIPANT_TOKEN_HEADER).toLowerCase();
   _headerCache = { name, at: Date.now() };
   return name;
 }
 
 async function hasParticipantToken(headers: http.IncomingHttpHeaders): Promise<boolean> {
   const headerName = await getParticipantHeader();
-  const tokenValue = headers[headerName];
-  return typeof tokenValue === 'string' && tokenValue.length > 0;
+  return firstHeader(headers[headerName]) !== null;
+}
+
+function firstHeader(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.find((v) => v.length > 0) ?? null;
+  return null;
 }
 
 // ─── Hop-by-hop headers that must not be forwarded ───────────────────────────
@@ -141,13 +161,19 @@ export function applyBodyLimit(
 
 export async function identifyUser(
   headers: http.IncomingHttpHeaders,
-): Promise<{ userId: number | null; username: string | null }> {
+): Promise<IdentityResult> {
   // 1. JWT via Authorization: Bearer <token>
   const authHeader = headers['authorization'];
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     try {
       const payload = verifyAccessToken(authHeader.slice(7));
-      return { userId: payload.sub, username: payload.username };
+      return {
+        userId: payload.sub,
+        institutionId: payload.institutionId ?? null,
+        username: payload.username,
+        participantTokenValid: null,
+        participantTokenInvalidReason: null,
+      };
     } catch {
       // Invalid or expired — treat as anonymous
     }
@@ -155,16 +181,51 @@ export async function identifyUser(
 
   // 2. Participant token via configured header
   const headerName = await getParticipantHeader();
-  const tokenValue = headers[headerName];
-  if (typeof tokenValue === 'string' && tokenValue) {
-    const rec = await prism.participantToken.findFirst({
-      where: { token: tokenValue, expiresAt: { gt: new Date() } },
-    });
-    if (rec) return { userId: rec.userId, username: null };
+  const tokenValue = firstHeader(headers[headerName]);
+  if (tokenValue) {
+    try {
+      const payload = verifyParticipantJwt(tokenValue);
+      const rec = await prism.participantToken.findUnique({
+        where: { userId: payload.userId },
+      });
+      const valid = rec?.token === tokenValue;
+      return {
+        userId: payload.userId,
+        institutionId: payload.institutionId,
+        username: null,
+        participantTokenValid: valid,
+        participantTokenInvalidReason: valid ? null : 'revoked',
+      };
+    } catch (err) {
+      if (err instanceof TokenExpiredError) {
+        const payload = decodeParticipantJwt(tokenValue);
+        return {
+          userId: payload?.userId ?? null,
+          institutionId: payload?.institutionId ?? null,
+          username: null,
+          participantTokenValid: false,
+          participantTokenInvalidReason: payload ? 'expired' : null,
+        };
+      }
+
+      return {
+        userId: null,
+        institutionId: null,
+        username: null,
+        participantTokenValid: false,
+        participantTokenInvalidReason: null,
+      };
+    }
   }
 
   // 3. Anonymous
-  return { userId: null, username: null };
+  return {
+    userId: null,
+    institutionId: null,
+    username: null,
+    participantTokenValid: null,
+    participantTokenInvalidReason: null,
+  };
 }
 
 // ─── forwardRequest ───────────────────────────────────────────────────────────
@@ -220,8 +281,14 @@ export async function handleRequest(
   // Step 1 — Collect request body
   const reqBodyBuffer = await collectBody(req);
 
-  // Step 2 — Identify user (JWT > X-Proxy-Key > anonymous)
-  const { userId, username } = await identifyUser(req.headers);
+  // Step 2 — Identify user (JWT > participant token > anonymous)
+  const {
+    userId,
+    institutionId,
+    username,
+    participantTokenValid,
+    participantTokenInvalidReason,
+  } = await identifyUser(req.headers);
   const participantTokenPresent = await hasParticipantToken(req.headers);
   const sanitizedReqHeaders = sanitizeHeaders(req.headers as Record<string, string | string[]>);
   const heartbeatIdHeader = Object.entries(sanitizedReqHeaders).find(
@@ -254,6 +321,9 @@ export async function handleRequest(
       reqBodySize: reqBodyBuffer.length > 0 ? reqBodyBuffer.length : null,
       reqBodyTruncated,
       participantTokenPresent,
+      participantTokenValid,
+      participantTokenInvalidReason,
+      institutionId,
       isSystemHeartbeat: !!heartbeatId,
       heartbeatId,
     } as any,
@@ -262,6 +332,7 @@ export async function handleRequest(
   wsManager.emitConnectionNew({
     id: connection.id,
     userId,
+    institutionId,
     username,
     serverId: server.id,
     reqMethod: req.method ?? 'UNKNOWN',
@@ -278,7 +349,7 @@ export async function handleRequest(
       where: { id: connection.id },
       data: { status: 'error' },
     });
-    wsManager.emitConnectionError({ id: connection.id, userId, serverId: server.id });
+    wsManager.emitConnectionError({ id: connection.id, userId, institutionId, serverId: server.id });
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end(`Bad Gateway: ${(err as Error).message}`);
@@ -346,6 +417,7 @@ export async function handleRequest(
   wsManager.emitConnectionCompleted({
     id: connection.id,
     userId,
+    institutionId,
     serverId: server.id,
     resStatusCode: proxyRes.statusCode ?? 0,
     durationMs,

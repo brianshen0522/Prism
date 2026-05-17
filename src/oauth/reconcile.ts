@@ -20,6 +20,7 @@ export type OAuthDiagnosticCode =
 type ConnectionRecord = {
   id: string;
   userId: number | null;
+  institutionId: number | null;
   serverId: string;
   reqMethod: string;
   reqUrl: string;
@@ -49,8 +50,51 @@ type ServerRecord = {
   oauthValidationSuccessValue?: string | null;
 };
 
+type InstitutionSummary = {
+  id: number;
+  name: string;
+  keyword: string | null;
+};
+
 function responseSucceeded(statusCode: number | null | undefined) {
   return typeof statusCode === 'number' && statusCode >= 200 && statusCode < 400;
+}
+
+function participantLinked(
+  connection: { userId?: number | null; institutionId?: number | null; participantTokenPresent?: boolean | null } | null | undefined,
+  participantUserId: number | null | undefined,
+  participantInstitutionId: number | null | undefined,
+) {
+  if (!connection?.participantTokenPresent) return false;
+  if (typeof participantInstitutionId === 'number' && typeof connection.institutionId === 'number') {
+    return connection.institutionId === participantInstitutionId;
+  }
+  return (
+    typeof participantUserId === 'number' &&
+    typeof connection.userId === 'number' &&
+    connection.userId === participantUserId
+  );
+}
+
+async function loadInstitutionMap(institutionIds: unknown[]) {
+  const ids: number[] = Array.from(new Set(
+    institutionIds.filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
+  ));
+  if (ids.length === 0) return new Map<number, InstitutionSummary>();
+
+  const institutions = await gazelle.gazelleInstitution.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, keyword: true },
+  });
+
+  return new Map((institutions as InstitutionSummary[]).map((institution) => [
+    institution.id,
+    {
+      id: institution.id,
+      name: institution.name,
+      keyword: institution.keyword,
+    },
+  ]));
 }
 
 function tryParseJson(input: string | null | undefined): unknown {
@@ -421,11 +465,13 @@ async function recomputePipelineState(pipelineId: string) {
   if (!pipeline) return;
 
   const pipelineParticipantUserId = pipeline.participantUserId ?? pipeline.tokenIssueConnection?.userId ?? null;
-  const tokenIssueParticipantLinked =
-    !!pipeline.tokenIssueConnection?.participantTokenPresent &&
-    typeof pipeline.tokenIssueConnection?.userId === 'number' &&
-    typeof pipelineParticipantUserId === 'number' &&
-    pipeline.tokenIssueConnection.userId === pipelineParticipantUserId;
+  const pipelineParticipantInstitutionId =
+    pipeline.participantInstitutionId ?? pipeline.tokenIssueConnection?.institutionId ?? null;
+  const tokenIssueParticipantLinked = participantLinked(
+    pipeline.tokenIssueConnection,
+    pipelineParticipantUserId,
+    pipelineParticipantInstitutionId,
+  );
 
   const tokenIssueSuccess =
     !!pipeline.tokenIssueConnection &&
@@ -447,10 +493,11 @@ async function recomputePipelineState(pipelineId: string) {
     !!pipeline.tokenIssueConnection?.participantTokenPresent &&
     tokenIssueParticipantLinked &&
     pipeline.resourceCalls.every((call: any) =>
-      !!call.participantTokenPresent &&
-      typeof call.resourceConnection?.userId === 'number' &&
-      typeof pipelineParticipantUserId === 'number' &&
-      call.resourceConnection.userId === pipelineParticipantUserId,
+      participantLinked(
+        { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+        pipelineParticipantUserId,
+        pipelineParticipantInstitutionId,
+      ),
     );
 
   const success =
@@ -465,11 +512,11 @@ async function recomputePipelineState(pipelineId: string) {
     tokenIssueAccessTokenExtracted: !!pipeline.tokenIssueConnection?.issuedAccessTokenHash,
     resourceCalls: pipeline.resourceCalls.map((call: any) => ({
       participantTokenPresent: !!call.participantTokenPresent,
-      participantLinked:
-        !!call.participantTokenPresent &&
-        typeof call.resourceConnection?.userId === 'number' &&
-        typeof pipelineParticipantUserId === 'number' &&
-        call.resourceConnection.userId === pipelineParticipantUserId,
+      participantLinked: participantLinked(
+        { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+        pipelineParticipantUserId,
+        pipelineParticipantInstitutionId,
+      ),
       resourceSuccess: !!call.resourceSuccess,
       validationMatched: !!call.validationConnectionId,
       validationSuccess: call.validationSuccess ?? null,
@@ -491,6 +538,7 @@ async function recomputePipelineState(pipelineId: string) {
 async function createOrFetchPipelineByTokenHash(input: {
   tokenHash: string;
   participantUserId: number | null | undefined;
+  participantInstitutionId: number | null | undefined;
   authenticationServerId: string | null | undefined;
   accessTokenPreview: string;
   issuedAt: Date;
@@ -501,6 +549,7 @@ async function createOrFetchPipelineByTokenHash(input: {
     return await (prism as any).oAuthPipeline.create({
       data: {
         participantUserId: input.participantUserId ?? null,
+        participantInstitutionId: input.participantInstitutionId ?? null,
         authenticationServerId: input.authenticationServerId ?? null,
         accessTokenHash: input.tokenHash,
         accessTokenPreview: input.accessTokenPreview,
@@ -527,6 +576,7 @@ async function upsertTokenIssue(connection: ConnectionRecord, server: ServerReco
     const created = await createOrFetchPipelineByTokenHash({
       tokenHash,
       participantUserId: connection.userId,
+      participantInstitutionId: connection.institutionId,
       authenticationServerId: server.id,
       accessTokenPreview: preview,
       tokenIssueConnectionId: connection.id,
@@ -541,6 +591,7 @@ async function upsertTokenIssue(connection: ConnectionRecord, server: ServerReco
     where: { id: existing.id },
     data: {
       participantUserId: existing.participantUserId ?? connection.userId,
+      participantInstitutionId: existing.participantInstitutionId ?? connection.institutionId,
       authenticationServerId: existing.authenticationServerId ?? server.id,
       accessTokenPreview: existing.accessTokenPreview || preview,
       tokenIssueConnectionId: existing.tokenIssueConnectionId ?? connection.id,
@@ -561,6 +612,7 @@ async function upsertResourceCall(connection: ConnectionRecord, server: ServerRe
     pipeline = await createOrFetchPipelineByTokenHash({
       tokenHash,
       participantUserId: connection.userId,
+      participantInstitutionId: connection.institutionId,
       authenticationServerId: server.oauthAuthServerId ?? null,
       accessTokenPreview: connection.accessTokenPreview ?? 'unknown',
       issuedAt: connection.reqTimestamp,
@@ -593,6 +645,7 @@ async function upsertResourceCall(connection: ConnectionRecord, server: ServerRe
     where: { id: pipeline.id },
     data: {
       participantUserId: pipeline.participantUserId ?? connection.userId,
+      participantInstitutionId: pipeline.participantInstitutionId ?? connection.institutionId,
       authenticationServerId: pipeline.authenticationServerId ?? server.oauthAuthServerId ?? null,
       lastSeenAt: connection.reqTimestamp,
     },
@@ -696,6 +749,7 @@ export async function buildOAuthPipelineList(filters: {
   limit: number;
   accessToken?: string;
   participantUserIds?: number[];
+  participantInstitutionIds?: number[];
   legal?: 'all' | 'legal' | 'illegal';
   success?: 'all' | 'success' | 'failed';
   authenticationServerIds?: string[];
@@ -705,6 +759,10 @@ export async function buildOAuthPipelineList(filters: {
 
   if (filters.participantUserIds && filters.participantUserIds.length > 0) {
     where.participantUserId = { in: filters.participantUserIds };
+  }
+
+  if (filters.participantInstitutionIds && filters.participantInstitutionIds.length > 0) {
+    where.participantInstitutionId = { in: filters.participantInstitutionIds };
   }
 
   if (filters.legal === 'legal') where.legal = true;
@@ -744,6 +802,7 @@ export async function buildOAuthPipelineList(filters: {
         resourceCalls: {
           include: {
             resourceServer: true,
+            resourceConnection: true,
           },
         },
       },
@@ -759,13 +818,21 @@ export async function buildOAuthPipelineList(filters: {
       .map((pipeline: any) => pipeline.participantUserId)
       .filter((id: unknown): id is number => typeof id === 'number'),
   ));
+  const institutionIds: number[] = Array.from(new Set(
+    pipelines
+      .map((pipeline: any) => pipeline.participantInstitutionId)
+      .filter((id: unknown): id is number => typeof id === 'number'),
+  ));
 
-  const users = userIds.length > 0
-    ? await gazelle.gazelleUser.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, username: true, firstname: true, lastname: true },
-    })
-    : [];
+  const [users, institutionMap] = await Promise.all([
+    userIds.length > 0
+      ? gazelle.gazelleUser.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, username: true, firstname: true, lastname: true },
+      })
+      : [],
+    loadInstitutionMap(institutionIds),
+  ]);
 
   const userMap = new Map(users.map((user) => [
     user.id,
@@ -862,19 +929,19 @@ export async function buildOAuthPipelineList(filters: {
           responseSucceeded(pipeline.tokenIssueConnection.resStatusCode) &&
           !!pipeline.tokenIssueConnection.issuedAccessTokenHash,
         tokenIssueParticipantTokenPresent: !!pipeline.tokenIssueConnection?.participantTokenPresent,
-        tokenIssueParticipantLinked:
-          !!pipeline.tokenIssueConnection?.participantTokenPresent &&
-          typeof pipeline.tokenIssueConnection?.userId === 'number' &&
-          typeof pipeline.participantUserId === 'number' &&
-          pipeline.tokenIssueConnection.userId === pipeline.participantUserId,
+        tokenIssueParticipantLinked: participantLinked(
+          pipeline.tokenIssueConnection,
+          pipeline.participantUserId,
+          pipeline.participantInstitutionId,
+        ),
         tokenIssueAccessTokenExtracted: !!pipeline.tokenIssueConnection?.issuedAccessTokenHash,
         resourceCalls: pipeline.resourceCalls.map((call: any) => ({
           participantTokenPresent: !!call.participantTokenPresent,
-          participantLinked:
-            !!call.participantTokenPresent &&
-            typeof call.resourceConnection?.userId === 'number' &&
-            typeof pipeline.participantUserId === 'number' &&
-            call.resourceConnection.userId === pipeline.participantUserId,
+          participantLinked: participantLinked(
+            { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+            pipeline.participantUserId,
+            pipeline.participantInstitutionId,
+          ),
           resourceSuccess: !!call.resourceSuccess,
           validationMatched: !!call.validationMatched,
           validationSuccess: call.validationSuccess ?? null,
@@ -889,6 +956,10 @@ export async function buildOAuthPipelineList(filters: {
         id: pipeline.id,
         started_at: pipeline.issuedAt ?? null,
         participant_user: pipeline.participantUserId ? userMap.get(pipeline.participantUserId) ?? null : null,
+        participant_institution_id: pipeline.participantInstitutionId ?? null,
+        participant_institution: pipeline.participantInstitutionId
+          ? institutionMap.get(pipeline.participantInstitutionId) ?? null
+          : null,
         authentication_server: pipeline.authenticationServer
           ? { id: pipeline.authenticationServer.id, name: pipeline.authenticationServer.name }
           : null,
@@ -937,6 +1008,10 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       select: { id: true, username: true, firstname: true, lastname: true },
     })
     : null;
+  const institutionMap = await loadInstitutionMap([pipeline.participantInstitutionId]);
+  const participantInstitution = pipeline.participantInstitutionId
+    ? institutionMap.get(pipeline.participantInstitutionId) ?? null
+    : null;
 
   const participantUser = user
     ? {
@@ -969,19 +1044,19 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
     hasTokenIssue: !!tokenIssue,
     tokenIssueSuccess: !!tokenIssue && responseSucceeded(tokenIssue.resStatusCode) && !!tokenIssue.issuedAccessTokenHash,
     tokenIssueParticipantTokenPresent: !!tokenIssue?.participantTokenPresent,
-    tokenIssueParticipantLinked:
-      !!tokenIssue?.participantTokenPresent &&
-      typeof tokenIssue?.userId === 'number' &&
-      typeof pipeline.participantUserId === 'number' &&
-      tokenIssue.userId === pipeline.participantUserId,
+    tokenIssueParticipantLinked: participantLinked(
+      tokenIssue,
+      pipeline.participantUserId,
+      pipeline.participantInstitutionId,
+    ),
     tokenIssueAccessTokenExtracted: !!tokenIssue?.issuedAccessTokenHash,
     resourceCalls: pipeline.resourceCalls.map((call: any) => ({
       participantTokenPresent: !!call.participantTokenPresent,
-      participantLinked:
-        !!call.participantTokenPresent &&
-        typeof call.resourceConnection?.userId === 'number' &&
-        typeof pipeline.participantUserId === 'number' &&
-        call.resourceConnection.userId === pipeline.participantUserId,
+      participantLinked: participantLinked(
+        { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+        pipeline.participantUserId,
+        pipeline.participantInstitutionId,
+      ),
       resourceSuccess: !!call.resourceSuccess,
       validationMatched: !!call.validationConnectionId,
       validationSuccess: call.validationSuccess ?? null,
@@ -993,6 +1068,8 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       id: pipeline.id,
       started_at: pipeline.issuedAt ?? null,
       participant_user: participantUser,
+      participant_institution_id: pipeline.participantInstitutionId ?? null,
+      participant_institution: participantInstitution,
       authentication_server: pipeline.authenticationServer
         ? { id: pipeline.authenticationServer.id, name: pipeline.authenticationServer.name }
         : null,
@@ -1013,11 +1090,11 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       raw_connection_path: tokenIssue ? `/connections/${tokenIssue.id}` : null,
       status_code: tokenIssue?.resStatusCode ?? null,
       participant_token_present: tokenIssue?.participantTokenPresent ?? false,
-      participant_token_linked:
-        !!tokenIssue?.participantTokenPresent &&
-        typeof tokenIssue?.userId === 'number' &&
-        typeof pipeline.participantUserId === 'number' &&
-        tokenIssue.userId === pipeline.participantUserId,
+      participant_token_linked: participantLinked(
+        tokenIssue,
+        pipeline.participantUserId,
+        pipeline.participantInstitutionId,
+      ),
       grant_type: tokenIssueGrantType,
       is_refresh_grant: tokenIssueGrantType === 'refresh_token',
       refresh_token_supplied: !!tokenIssueRefreshToken,
@@ -1042,11 +1119,11 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
       url: call.resourceConnection.reqUrl,
       status_code: call.resourceConnection.resStatusCode ?? null,
       participant_token_present: call.participantTokenPresent,
-      participant_token_linked:
-        !!call.participantTokenPresent &&
-        typeof call.resourceConnection?.userId === 'number' &&
-        typeof pipeline.participantUserId === 'number' &&
-        call.resourceConnection.userId === pipeline.participantUserId,
+      participant_token_linked: participantLinked(
+        { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+        pipeline.participantUserId,
+        pipeline.participantInstitutionId,
+      ),
       success: call.resourceSuccess,
       ui_status: !call.participantTokenPresent
         ? 'error'
@@ -1077,11 +1154,11 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
         tokenIssueAccessTokenExtracted: true,
         resourceCalls: [{
           participantTokenPresent: call.participantTokenPresent,
-          participantLinked:
-            !!call.participantTokenPresent &&
-            typeof call.resourceConnection?.userId === 'number' &&
-            typeof pipeline.participantUserId === 'number' &&
-            call.resourceConnection.userId === pipeline.participantUserId,
+          participantLinked: participantLinked(
+            { ...call.resourceConnection, participantTokenPresent: call.participantTokenPresent },
+            pipeline.participantUserId,
+            pipeline.participantInstitutionId,
+          ),
           resourceSuccess: call.resourceSuccess,
           validationMatched: !!call.validationConnectionId,
           validationSuccess: call.validationSuccess ?? null,
@@ -1095,16 +1172,20 @@ export async function buildOAuthPipelineDetail(pipelineId: string) {
   };
 }
 
-export async function buildOAuthFilterOptions(participantUserId?: number) {
+export async function buildOAuthFilterOptions(filters: {
+  participantUserId?: number;
+  participantInstitutionId?: number;
+} = {}) {
   const [pipelines, authServers, resourceServers] = await Promise.all([
     (prism as any).oAuthPipeline.findMany({
       select: {
         participantUserId: true,
+        participantInstitutionId: true,
       },
-      distinct: ['participantUserId'],
+      distinct: ['participantUserId', 'participantInstitutionId'],
       where: {
-        ...(participantUserId ? { participantUserId } : {}),
-        participantUserId: { not: null },
+        ...(filters.participantUserId ? { participantUserId: filters.participantUserId } : {}),
+        ...(filters.participantInstitutionId ? { participantInstitutionId: filters.participantInstitutionId } : {}),
       },
     }),
     prism.backendServer.findMany({
@@ -1122,14 +1203,20 @@ export async function buildOAuthFilterOptions(participantUserId?: number) {
   const userIds: number[] = pipelines
     .map((pipeline: any) => pipeline.participantUserId)
     .filter((id: unknown): id is number => typeof id === 'number');
+  const institutionIds: number[] = pipelines
+    .map((pipeline: any) => pipeline.participantInstitutionId)
+    .filter((id: unknown): id is number => typeof id === 'number');
 
-  const users = userIds.length > 0
-    ? await gazelle.gazelleUser.findMany({
-      where: { id: { in: userIds } },
-      orderBy: { username: 'asc' },
-      select: { id: true, username: true, firstname: true, lastname: true },
-    })
-    : [];
+  const [users, institutionMap] = await Promise.all([
+    userIds.length > 0
+      ? gazelle.gazelleUser.findMany({
+        where: { id: { in: userIds } },
+        orderBy: { username: 'asc' },
+        select: { id: true, username: true, firstname: true, lastname: true },
+      })
+      : [],
+    loadInstitutionMap(institutionIds),
+  ]);
 
   return {
     participant_users: users.map((user) => ({
@@ -1137,6 +1224,7 @@ export async function buildOAuthFilterOptions(participantUserId?: number) {
       username: user.username,
       name: `${user.firstname ?? ''} ${user.lastname ?? ''}`.trim() || user.username,
     })),
+    participant_institutions: Array.from(institutionMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
     authentication_servers: authServers,
     resource_servers: resourceServers,
   };

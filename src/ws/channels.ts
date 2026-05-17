@@ -14,6 +14,7 @@ export interface WSMessage {
 // dashboard          → admin | monitor | oauth2
 // traffic:all        → admin | monitor | oauth2
 // traffic:user:{id}  → that user OR admin | monitor | oauth2
+// traffic:institution:{id} → that institution member OR admin | monitor | oauth2
 // server:{uuid}      → admin | monitor | oauth2
 
 export function canSubscribe(user: JwtPayload | null, channel: string): boolean {
@@ -28,6 +29,11 @@ export function canSubscribe(user: JwtPayload | null, channel: string): boolean 
   const userMatch = channel.match(/^traffic:user:(\d+)$/);
   if (userMatch) {
     return isPrivileged || user.sub === Number(userMatch[1]);
+  }
+
+  const institutionMatch = channel.match(/^traffic:institution:(\d+)$/);
+  if (institutionMatch) {
+    return isPrivileged || user.institutionId === Number(institutionMatch[1]);
   }
 
   if (/^server:[0-9a-f-]{36}$/i.test(channel)) {

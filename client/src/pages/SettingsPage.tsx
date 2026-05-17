@@ -13,7 +13,7 @@ import { fmtDate } from '../lib/utils';
 
 const SUGGESTIONS = [
   { key: 'participant_token_header', label: 'Participant token header name', hint: 'Header participants must include in requests. Default: X-Participant-Token', range: 'Letters, numbers, hyphens only. 1-128 chars.', placeholder: 'X-Participant-Token', type: 'text' },
-  { key: 'participant_token_ttl_minutes', label: 'Participant token TTL (minutes)', hint: 'How often participant tokens rotate. Default: 5.', range: 'Integer between 1 and 1440.', placeholder: '5', type: 'number' },
+  { key: 'participant_token_ttl_minutes', label: 'Participant token TTL (minutes)', hint: 'How often participant tokens rotate. Default: 5.', range: 'Integer between 1 and 43200 (30 days).', placeholder: '5', type: 'number' },
   { key: 'default_body_size_limit_kb', label: 'Default body storage limit (KB)', hint: 'Applied to new servers. 0 = unlimited.', range: 'Integer between 0 and 1048576.', placeholder: '0', type: 'number' },
   { key: 'proxy_request_timeout_ms', label: 'Proxy request timeout (ms)', hint: 'Max time to wait for target. Default: 30000.', range: 'Integer between 1000 and 300000.', placeholder: '30000', type: 'number' },
   { key: 'dashboard_requests_window_minutes', label: 'Dashboard requests window (minutes)', hint: 'Time window for the Requests and Error Rate stat cards. Default: 5.', range: 'Integer between 1 and 1440.', placeholder: '5', type: 'number' },
@@ -37,7 +37,7 @@ function validateSettingValue(key: string, value: string): string | null {
       if (trimmed.length > 128) return 'Must be 128 characters or fewer.';
       return null;
     case 'participant_token_ttl_minutes':
-      return validateIntegerRange(trimmed, 1, 1440);
+      return validateIntegerRange(trimmed, 1, 43200);
     case 'default_body_size_limit_kb':
       return validateIntegerRange(trimmed, 0, 1048576);
     case 'proxy_request_timeout_ms':

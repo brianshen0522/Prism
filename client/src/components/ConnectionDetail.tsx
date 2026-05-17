@@ -1,5 +1,5 @@
 import { useState, useContext, createContext, useEffect, useRef, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Link, Search, Server, User, X } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Clock, Copy, Link, Search, Server, ShieldCheck, X } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
@@ -374,7 +374,54 @@ function buildCurl(c: ConnectionDetail): string {
 
 // ─── ConnectionDetailContent — the shareable detail view ─────────────────────
 
+function tokenValidityMeta(c: ConnectionDetail) {
+  if (!c.participant_token_present) {
+    return {
+      presentLabel: 'Not present',
+      validLabel: 'No token',
+      className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+      description: 'This request did not include a participant token.',
+    };
+  }
+
+  if (c.participant_token_valid === true) {
+    return {
+      presentLabel: 'Present',
+      validLabel: 'Valid',
+      className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+      description: 'The participant token matched the current token record.',
+    };
+  }
+
+  if (c.participant_token_invalid_reason === 'expired') {
+    return {
+      presentLabel: 'Present',
+      validLabel: 'Expired',
+      className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+      description: 'The participant token was signed by Prism, but its expiry has passed.',
+    };
+  }
+
+  if (c.participant_token_invalid_reason === 'revoked') {
+    return {
+      presentLabel: 'Present',
+      validLabel: 'Revoked',
+      className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+      description: 'The participant token was replaced by a newer token.',
+    };
+  }
+
+  return {
+    presentLabel: 'Present',
+    validLabel: 'Invalid',
+    className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    description: 'The participant token could not be verified.',
+  };
+}
+
 export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
+  const tokenMeta = tokenValidityMeta(c);
+
   return (
     <div className="space-y-4">
       {/* Summary */}
@@ -385,14 +432,11 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
         <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
           <Server className="h-3.5 w-3.5" />{c.server_name ?? c.server_id}
         </div>
-        <div
-          className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"
-          title={c.user_id != null ? `${c.user_name ?? `User ${c.user_id}`} (#${c.user_id})` : undefined}
-        >
-          <User className="h-3.5 w-3.5" />
-          {c.user_id != null
-            ? (c.user_name ?? `User ${c.user_id}`)
-            : <span className="text-gray-300 dark:text-gray-600">anon</span>}
+        <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+          <Building2 className="h-3.5 w-3.5" />
+          {c.institution_id != null
+            ? (c.institution_name ?? `Institution ${c.institution_id}`)
+            : <span className="text-gray-300 dark:text-gray-600">anonymous</span>}
         </div>
         <Badge className={statusColor(c.status)}>{c.status}</Badge>
         {c.res_status_code && <Badge className={httpStatusColor(c.res_status_code)}>HTTP {c.res_status_code}</Badge>}
@@ -407,6 +451,47 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
             icon={<Link className="h-3 w-3" />}
           />
         )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Attributed to</p>
+            <div className="flex items-start gap-2">
+              <Building2 className="mt-0.5 h-4 w-4 text-gray-400 dark:text-gray-500" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {c.institution_id != null
+                    ? (c.institution_name ?? `Institution ${c.institution_id}`)
+                    : 'Anonymous'}
+                </p>
+                {c.user_id != null && (
+                  <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                    {c.user_name ?? `User ${c.user_id}`} (#{c.user_id})
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Participant Token</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className={c.participant_token_present
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}>
+                {tokenMeta.presentLabel}
+              </Badge>
+              <Badge className={tokenMeta.className}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {tokenMeta.validLabel}
+              </Badge>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{tokenMeta.description}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Request */}

@@ -5,6 +5,8 @@ export interface JwtPayload {
   sub: number;
   username: string;
   role: 'admin' | 'monitor' | 'oauth2' | 'user';
+  institutionId?: number;
+  institutionName?: string;
   iat?: number;
   exp?: number;
 }

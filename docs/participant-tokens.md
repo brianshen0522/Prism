@@ -4,6 +4,8 @@ Prism exposes API endpoints for the participant token, also referred to in the U
 
 For external integrations, the preferred pattern is to authenticate each request with `username` and `password` in the request body. Legacy Bearer-token routes remain available for the Prism web UI.
 
+Participant tokens are signed JWTs issued for one user and that user's current institution. The signing secret is `PARTICIPANT_TOKEN_SECRET`, which must be different from the regular access-token secrets.
+
 ## Security Notes
 
 - Use the username/password APIs only over HTTPS.
@@ -30,10 +32,11 @@ Response shape:
 
 ```json
 {
-  "token": "9f6d...",
+  "token": "eyJhbGciOi...",
   "expires_at": "2026-04-05T12:00:00.000Z",
   "created_at": "2026-04-05T11:55:00.000Z",
-  "header_name": "X-Participant-Token"
+  "header_name": "X-Participant-Token",
+  "institution_id": 456
 }
 ```
 
@@ -56,10 +59,11 @@ Response shape:
 
 ```json
 {
-  "token": "9f6d...",
+  "token": "eyJhbGciOi...",
   "expires_at": "2026-04-05T12:30:00.000Z",
   "created_at": "2026-04-05T12:00:00.000Z",
-  "header_name": "X-Participant-Token"
+  "header_name": "X-Participant-Token",
+  "institution_id": 456
 }
 ```
 
@@ -112,10 +116,12 @@ Response shape:
 
 ```json
 {
-  "token": "9f6d...",
+  "token": "eyJhbGciOi...",
   "valid": true,
   "expires_at": "2026-04-05T12:00:00.000Z",
   "header_name": "X-Participant-Token",
+  "institution_id": 456,
+  "belongs_to_current_organization": true,
   "belongs_to_current_user": true,
   "reason": "valid"
 }
@@ -125,6 +131,7 @@ Possible `reason` values:
 
 - `valid`
 - `expired`
+- `revoked`
 - `not_found`
 
 This mode is intended for:

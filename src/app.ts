@@ -9,6 +9,7 @@ import { connectionRoutes } from './routes/connections';
 import { tokenRoutes } from './routes/token';
 import { dashboardRoutes } from './routes/dashboard';
 import { settingsRoutes } from './routes/settings';
+import { adminUsersRoutes } from './routes/admin-users';
 import { oauthRoutes } from './routes/oauth';
 import { integrationGuideRoutes } from './routes/integration-guide';
 import { publicRoutes } from './routes/public';
@@ -35,6 +36,7 @@ export async function buildApp() {
   await app.register(tokenRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
+  await app.register(adminUsersRoutes, { prefix: '/api' });
   await app.register(oauthRoutes, { prefix: '/api' });
   await app.register(integrationGuideRoutes, { prefix: '/api' });
   await app.register(publicRoutes, { prefix: '/api' });

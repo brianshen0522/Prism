@@ -26,6 +26,9 @@ vi.mock('../db/gazelle', () => ({
     gazelleUser: {
       findMany: vi.fn(),
     },
+    gazelleInstitution: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -43,13 +46,20 @@ import { gazelle } from '../db/gazelle';
 const adminToken = () => `Bearer ${signAccessToken({ sub: 1, username: 'admin', role: 'admin' })}`;
 const monitorToken = () => `Bearer ${signAccessToken({ sub: 2, username: 'mon', role: 'monitor' })}`;
 const oauth2Token = (sub = 30) => `Bearer ${signAccessToken({ sub, username: 'oauth', role: 'oauth2' })}`;
-const userToken = (sub = 10) => `Bearer ${signAccessToken({ sub, username: 'user', role: 'user' })}`;
+const userToken = (sub = 10, institutionId = 456) => `Bearer ${signAccessToken({
+  sub,
+  username: 'user',
+  role: 'user',
+  institutionId,
+  institutionName: 'Taiwan Hospital',
+})}`;
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const MOCK_CONN = {
   id: 'conn-1',
   userId: 10,
+  institutionId: 456,
   serverId: 'srv-1',
   status: 'completed',
   reqId: 'req-1',
@@ -66,6 +76,9 @@ const MOCK_CONN = {
   resBody: '{"resourceType":"Bundle"}',
   resBodyTruncated: false,
   durationMs: 200,
+  participantTokenPresent: true,
+  participantTokenValid: true,
+  participantTokenInvalidReason: null,
   shareToken: 'share-conn-1',
   createdAt: new Date('2024-01-01T10:00:00Z'),
   server: { name: 'HAPI FHIR' },
@@ -87,6 +100,9 @@ beforeEach(() => {
   vi.mocked(prism.connection.findUnique).mockResolvedValue(MOCK_CONN as any);
   vi.mocked(gazelle.gazelleUser.findMany).mockResolvedValue([
     { id: 10, username: 'alice', firstname: 'Alice', lastname: 'Chen', roles: [] },
+  ] as any);
+  vi.mocked(gazelle.gazelleInstitution.findMany).mockResolvedValue([
+    { id: 456, name: 'Taiwan Hospital', keyword: 'TWH' },
   ] as any);
 });
 
@@ -136,20 +152,39 @@ describe('GET /api/connections', () => {
       req_url: '/fhir/Patient',
       server_name: 'HAPI FHIR',
       user_name: 'Alice Chen',
+      institution_id: 456,
+      institution_name: 'Taiwan Hospital',
+      participant_token_present: true,
+      participant_token_valid: true,
+      participant_token_invalid_reason: null,
     });
   });
 
-  it('scopes query to current user for non-privileged users', async () => {
+  it('scopes query to current institution for non-privileged users', async () => {
     await app.inject({
       method: 'GET',
       url: '/api/connections',
       headers: { authorization: userToken(10) },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'institutionId')).toBe(456);
     expect(findClause((callArg as any).where, 'userId')).toBe(10);
   });
 
-  it('scopes query to current user for oauth2 users when restriction is enabled', async () => {
+  it('falls back to user scope when token has no institution', async () => {
+    const legacyToken = `Bearer ${signAccessToken({ sub: 10, username: 'user', role: 'user' })}`;
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/connections',
+      headers: { authorization: legacyToken },
+    });
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'userId')).toBe(10);
+    expect(findClause((callArg as any).where, 'institutionId')).toBeUndefined();
+  });
+
+  it('scopes query to current user for oauth2 users without institution when restriction is enabled', async () => {
     await app.inject({
       method: 'GET',
       url: '/api/connections?scope=all',
@@ -235,6 +270,16 @@ describe('GET /api/connections', () => {
     expect(findClause((callArg as any).where, 'userId')).toBe(42);
   });
 
+  it('allows admin to filter by institution_id', async () => {
+    await app.inject({
+      method: 'GET',
+      url: '/api/connections?institution_id=456',
+      headers: { authorization: adminToken() },
+    });
+    const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'institutionId')).toBe(456);
+  });
+
   it('ignores user_id filter for non-privileged users', async () => {
     await app.inject({
       method: 'GET',
@@ -242,6 +287,7 @@ describe('GET /api/connections', () => {
       headers: { authorization: userToken(10) },
     });
     const [callArg] = vi.mocked(prism.connection.findMany).mock.calls[0];
+    expect(findClause((callArg as any).where, 'institutionId')).toBe(456);
     expect(findClause((callArg as any).where, 'userId')).toBe(10);
   });
 
@@ -315,6 +361,36 @@ describe('GET /api/connections/filter-options', () => {
   });
 });
 
+describe('GET /api/institutions', () => {
+  it('returns activated institutions for admin filters', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/institutions',
+      headers: { authorization: adminToken() },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { id: 456, name: 'Taiwan Hospital', keyword: 'TWH' },
+    ]);
+    expect(gazelle.gazelleInstitution.findMany).toHaveBeenCalledWith({
+      where: { activated: true },
+      select: { id: true, name: true, keyword: true },
+      orderBy: { name: 'asc' },
+    });
+  });
+
+  it('denies regular users', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/institutions',
+      headers: { authorization: userToken() },
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+});
+
 // ─── GET /api/connections/:id ─────────────────────────────────────────────────
 
 describe('GET /api/connections/:id', () => {
@@ -330,6 +406,8 @@ describe('GET /api/connections/:id', () => {
     expect(body).toHaveProperty('res_body');
     expect(body).toHaveProperty('res_status_code', 200);
     expect(body).toHaveProperty('user_name', 'Alice Chen');
+    expect(body).toHaveProperty('institution_name', 'Taiwan Hospital');
+    expect(body).toHaveProperty('participant_token_valid', true);
   });
 
   it('allows admin to view any connection', async () => {
@@ -354,7 +432,7 @@ describe('GET /api/connections/:id', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/connections/conn-1',
-      headers: { authorization: userToken(99) }, // different user
+      headers: { authorization: userToken(99, 999) }, // different user and institution
     });
     expect(res.statusCode).toBe(403);
   });

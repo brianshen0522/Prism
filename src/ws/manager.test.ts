@@ -68,10 +68,37 @@ describe('subscribe', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('user can subscribe to own institution traffic channel', () => {
+    const { ws } = makeWS();
+    wsManager.addClient(ws, {
+      sub: 42,
+      username: 'bob',
+      role: 'user',
+      institutionId: 456,
+      institutionName: 'Taiwan Hospital',
+    });
+    const result = wsManager.subscribe(ws, 'traffic:institution:456');
+    expect(result.ok).toBe(true);
+  });
+
   it("user cannot subscribe to another user's traffic channel", () => {
     const { ws } = makeWS();
     wsManager.addClient(ws, { sub: 42, username: 'bob', role: 'user' });
     const result = wsManager.subscribe(ws, 'traffic:user:99');
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('forbidden');
+  });
+
+  it("user cannot subscribe to another institution's traffic channel", () => {
+    const { ws } = makeWS();
+    wsManager.addClient(ws, {
+      sub: 42,
+      username: 'bob',
+      role: 'user',
+      institutionId: 456,
+      institutionName: 'Taiwan Hospital',
+    });
+    const result = wsManager.subscribe(ws, 'traffic:institution:999');
     expect(result.ok).toBe(false);
     expect(result.error).toBe('forbidden');
   });
@@ -199,5 +226,25 @@ describe('emitConnectionNew', () => {
 
     const msgs = sent.map((s) => JSON.parse(s));
     expect(msgs.some((m) => m.type === 'connection:new')).toBe(true);
+  });
+
+  it('emits to traffic:institution channel when institutionId is set', () => {
+    const { ws, sent } = makeWS();
+    wsManager.addClient(ws, { sub: 42, username: 'bob', role: 'user', institutionId: 456, institutionName: 'Taiwan Hospital' });
+    wsManager.subscribe(ws, 'traffic:institution:456');
+
+    wsManager.emitConnectionNew({
+      id: 'conn-3',
+      userId: 7,
+      institutionId: 456,
+      username: 'alice',
+      serverId: '00000000-0000-0000-0000-000000000003',
+      reqMethod: 'GET',
+      reqUrl: '/fhir/Observation',
+      reqTimestamp: new Date(),
+    });
+
+    const msgs = sent.map((s) => JSON.parse(s));
+    expect(msgs.some((m) => m.type === 'connection:new' && m.payload.institutionId === 456)).toBe(true);
   });
 });

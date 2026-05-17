@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, Check, RefreshCw, ShieldCheck, Clock, Play, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, Check, RefreshCw, ShieldCheck, Clock, Play, ChevronDown, ChevronUp, Building2, AlertTriangle } from 'lucide-react';
 import { fetchParticipantToken, regenParticipantToken } from '../lib/api';
 import { copyToClipboard } from '../lib/utils';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Dialog } from '../components/ui/dialog';
 import { PageHeader, PageShell } from '../components/PageLayout';
 import { Skeleton } from '../components/ui/skeleton';
 import { useAuthStore } from '../store/auth';
+import { useWebSocket } from '../lib/ws';
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -48,16 +50,23 @@ function Countdown({ expiresAt, onExpired }: { expiresAt: string; onExpired: () 
   }, [expiresAt, onExpired]);
 
   const totalSecs = Math.floor(remaining / 1000);
-  const mins = Math.floor(totalSecs / 60);
-  const secs = totalSecs % 60;
   const urgent = totalSecs < 30;
+
+  function fmtRemaining(secs: number): string {
+    if (secs <= 0) return 'Expired — refreshing…';
+    const days  = Math.floor(secs / 86400);
+    const hours = Math.floor((secs % 86400) / 3600);
+    const mins  = Math.floor((secs % 3600) / 60);
+    const s     = secs % 60;
+    if (days >= 1)  return `Expires in ${days}d ${hours}h`;
+    if (hours >= 1) return `Expires in ${hours}h ${mins}m`;
+    return `Expires in ${mins}:${String(s).padStart(2, '0')}`;
+  }
 
   return (
     <div className={`flex items-center gap-2 text-sm font-mono ${urgent ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
       <Clock className="h-3.5 w-3.5 shrink-0" />
-      <span>
-        {remaining === 0 ? 'Expired — refreshing…' : `Expires in ${mins}:${String(secs).padStart(2, '0')}`}
-      </span>
+      <span>{fmtRemaining(totalSecs)}</span>
     </div>
   );
 }
@@ -173,6 +182,9 @@ function TryItPanel({ endpoint, defaultUsername }: { endpoint: string; defaultUs
 export function TokenPage() {
   const qc = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const isTokenStale = useAuthStore((state) => state.participantTokenStale);
+  const clearTokenStale = useAuthStore((state) => state.clearParticipantTokenStale);
+  const [regenDialogOpen, setRegenDialogOpen] = useState(false);
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
   const curlUsername = user?.username ?? '<username>';
   const curlPassword = '<password>';
@@ -190,6 +202,28 @@ export function TokenPage() {
   });
 
   const handleExpired = () => refetch();
+
+  useEffect(() => {
+    if (!isTokenStale) return;
+    refetch();
+    clearTokenStale();
+  }, [isTokenStale, refetch, clearTokenStale]);
+
+  const institutionChannel = user?.institutionId ? `traffic:institution:${user.institutionId}` : null;
+  const handleWsMessage = useCallback((msg: { type: string; payload?: unknown }) => {
+    if (msg.type !== 'token:institution_regenned') return;
+    const payload = msg.payload as { triggeredByUserId?: number } | undefined;
+    if (payload?.triggeredByUserId !== user?.sub) {
+      refetch();
+    }
+  }, [user?.sub, refetch]);
+
+  useWebSocket({
+    channels: institutionChannel ? [institutionChannel] : [],
+    onMessage: handleWsMessage,
+    enabled: !!institutionChannel,
+  });
+
   const currentTokenCurl = `curl -X POST \\
   -H "Content-Type: application/json" \\
   -d '{"username":"${curlUsername}","password":"${curlPassword}"}' \\
@@ -199,7 +233,42 @@ export function TokenPage() {
   -d '{"username":"${curlUsername}","password":"${curlPassword}"}' \\
   ${currentOrigin}/api/token/renew`;
 
+  const institutionShortName = user ? (user.institutionKeyword ?? user.institutionName) : 'your institution';
+
   return (
+    <>
+    <Dialog
+      open={regenDialogOpen}
+      onClose={() => setRegenDialogOpen(false)}
+      title="Regenerate institution tokens"
+    >
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500 mt-0.5" />
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            This will regenerate tokens for <span className="font-semibold">{institutionShortName}</span>.
+            All current tokens will be invalidated immediately — every member will need to fetch a new token before their next request.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setRegenDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={regenMut.isPending}
+            onClick={() => {
+              setRegenDialogOpen(false);
+              regenMut.mutate();
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Regenerate
+          </Button>
+        </div>
+      </div>
+    </Dialog>
     <PageShell width="wide" className="max-w-6xl">
       <PageHeader
         title="Participant Token"
@@ -213,6 +282,20 @@ export function TokenPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
         <div className="space-y-6">
+          {user && (
+            <Card>
+              <CardContent className="flex items-start gap-3 p-4">
+                <Building2 className="mt-0.5 h-5 w-5 text-blue-500" />
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{user.institutionKeyword ?? user.institutionName}</p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    This token belongs to your institution. Each member has their own token.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -224,11 +307,7 @@ export function TokenPage() {
                   variant="secondary"
                   size="sm"
                   loading={regenMut.isPending}
-                  onClick={() => {
-                    if (confirm('Regenerate your token? The current token will stop working immediately.')) {
-                      regenMut.mutate();
-                    }
-                  }}
+                  onClick={() => setRegenDialogOpen(true)}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Regenerate
@@ -251,6 +330,11 @@ export function TokenPage() {
                   </div>
 
                   <Countdown expiresAt={data.expires_at} onExpired={handleExpired} />
+                  {user && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Issued for: <span className="font-medium text-gray-700 dark:text-gray-300">{user.institutionKeyword ?? user.institutionName}</span>
+                    </p>
+                  )}
 
                   <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 dark:border-blue-900 dark:bg-blue-900/20">
                     <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
@@ -344,5 +428,6 @@ export function TokenPage() {
         )}
       </div>
     </PageShell>
+    </>
   );
 }

@@ -6,9 +6,10 @@ import { authenticate } from '../plugins/authenticate';
 import { requireRole } from '../plugins/authorize';
 import { ensureConnectionShareToken } from '../lib/share';
 import { canRoleViewAllTraffic } from '../lib/settings';
+import type { JwtPayload } from '../lib/jwt';
 
 type SearchCond = { term: string; scopes: string[] };
-type FilterField = 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
+type FilterField = 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'institution_id' | 'text';
 type FilterCond = {
   field: FilterField;
   logic?: 'and' | 'or';
@@ -28,6 +29,11 @@ type GazelleUserNameRow = {
   username: string;
   firstname: string | null;
   lastname: string | null;
+};
+type GazelleInstitutionRow = {
+  id: number;
+  name: string;
+  keyword: string | null;
 };
 
 const SCOPE_COL: Record<string, string> = {
@@ -72,11 +78,49 @@ export async function loadUserNameMap(userIds: unknown[]): Promise<Map<number, s
   return new Map((users as GazelleUserNameRow[]).map((user) => [user.id, gazelleDisplayName(user)]));
 }
 
-function fmtConnection(c: Record<string, unknown>, serverName?: string, userName?: string | null) {
+export async function loadInstitutionNameMap(institutionIds: unknown[]): Promise<Map<number, string>> {
+  const ids = [...new Set(
+    institutionIds.filter((id): id is number => typeof id === 'number' && Number.isFinite(id)),
+  )];
+  if (ids.length === 0) return new Map();
+
+  const institutions = await gazelle.gazelleInstitution.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, keyword: true },
+  });
+
+  return new Map((institutions as GazelleInstitutionRow[]).map((i) => [i.id, i.keyword ?? i.name]));
+}
+
+function trafficScopeForUser(user: JwtPayload): Prisma.ConnectionWhereInput {
+  if (typeof user.institutionId === 'number') {
+    return {
+      OR: [
+        { institutionId: user.institutionId },
+        { userId: user.sub },
+      ],
+    };
+  }
+  return { userId: user.sub };
+}
+
+function canViewConnection(user: JwtPayload, c: { userId: number | null; institutionId?: number | null }) {
+  if (typeof user.institutionId === 'number' && c.institutionId === user.institutionId) return true;
+  return c.userId === user.sub;
+}
+
+function fmtConnection(
+  c: Record<string, unknown>,
+  serverName?: string,
+  userName?: string | null,
+  institutionName?: string | null,
+) {
   return {
     id: c.id,
     user_id: c.userId,
     user_name: userName ?? null,
+    institution_id: c.institutionId ?? null,
+    institution_name: institutionName ?? null,
     server_id: c.serverId,
     server_name: serverName ?? null,
     status: c.status,
@@ -88,13 +132,21 @@ function fmtConnection(c: Record<string, unknown>, serverName?: string, userName
     res_status_code: c.resStatusCode ?? null,
     res_body_size: c.resBodySize ?? null,
     duration_ms: c.durationMs ?? null,
+    participant_token_present: c.participantTokenPresent ?? false,
+    participant_token_valid: c.participantTokenValid ?? null,
+    participant_token_invalid_reason: c.participantTokenInvalidReason ?? null,
     is_system_heartbeat: c.isSystemHeartbeat ?? false,
   };
 }
 
-export function fmtConnectionDetail(c: Record<string, unknown>, serverName?: string, userName?: string | null) {
+export function fmtConnectionDetail(
+  c: Record<string, unknown>,
+  serverName?: string,
+  userName?: string | null,
+  institutionName?: string | null,
+) {
   return {
-    ...fmtConnection(c, serverName, userName),
+    ...fmtConnection(c, serverName, userName, institutionName),
     req_headers: c.reqHeaders,
     req_body: c.reqBody ?? null,
     req_body_truncated: c.reqBodyTruncated,
@@ -205,7 +257,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     const where: Prisma.ConnectionWhereInput =
       !canViewAll
-        ? { userId: req.user.sub }
+        ? trafficScopeForUser(req.user)
         : {};
 
     const rows = await prism.connection.findMany({
@@ -236,6 +288,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       status,
       method,
       user_id,
+      institution_id,
       from,
       to,
       filters,
@@ -256,7 +309,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
     const canViewAll = await canViewAllTraffic(req.user.role);
 
     const baseAnd: Prisma.ConnectionWhereInput[] = [];
-    if (!canViewAll) baseAnd.push({ userId: req.user.sub });
+    if (!canViewAll) baseAnd.push(trafficScopeForUser(req.user));
     if (include_system_heartbeat !== 'true') baseAnd.push({ isSystemHeartbeat: false } as any);
 
     const parsedFilters = parseFilterConditions(filters);
@@ -314,11 +367,22 @@ export async function connectionRoutes(fastify: FastifyInstance) {
         }
 
         if (filter.field === 'user_id') {
-          if (!canViewAll) return clauses;
           const values = Array.isArray(filter.values)
             ? filter.values.map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value))
             : [];
           if (values.length > 0) clauses.push({ logic, clause: { userId: values.length === 1 ? values[0] : { in: values } } });
+          return clauses;
+        }
+
+        if (filter.field === 'institution_id') {
+          if (!canViewAll) return clauses;
+          const values = Array.isArray(filter.values)
+            ? filter.values.map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value))
+            : [];
+          if (values.length > 0) clauses.push({
+            logic,
+            clause: { institutionId: values.length === 1 ? values[0] : { in: values } },
+          });
           return clauses;
         }
 
@@ -339,6 +403,12 @@ export async function connectionRoutes(fastify: FastifyInstance) {
         const userIds = user_id.split(',').map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value));
         if (userIds.length === 1) filterClauses.push({ logic: 'and', clause: { userId: userIds[0] } });
         else if (userIds.length > 1) filterClauses.push({ logic: 'and', clause: { userId: { in: userIds } } });
+      }
+
+      if (canViewAll && institution_id) {
+        const institutionIds = institution_id.split(',').map((value) => parseInt(value, 10)).filter((value) => !Number.isNaN(value));
+        if (institutionIds.length === 1) filterClauses.push({ logic: 'and', clause: { institutionId: institutionIds[0] } });
+        else if (institutionIds.length > 1) filterClauses.push({ logic: 'and', clause: { institutionId: { in: institutionIds } } });
       }
 
       if (serverIds.length === 1) filterClauses.push({ logic: 'and', clause: { serverId: serverIds[0] } });
@@ -395,8 +465,16 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       prism.connection.count({ where }),
     ]);
 
-    const userNameMap = await loadUserNameMap(rows.map((c) => (c as any).userId));
-    const data = rows.map((c) => fmtConnection(c as any, (c as any).server?.name, userNameMap.get((c as any).userId)));
+    const [userNameMap, institutionNameMap] = await Promise.all([
+      loadUserNameMap(rows.map((c) => (c as any).userId)),
+      loadInstitutionNameMap(rows.map((c) => (c as any).institutionId)),
+    ]);
+    const data = rows.map((c) => fmtConnection(
+      c as any,
+      (c as any).server?.name,
+      userNameMap.get((c as any).userId),
+      institutionNameMap.get((c as any).institutionId),
+    ));
     reply.send({ data, total, page: pageNum, limit: limitNum });
   });
 
@@ -412,26 +490,65 @@ export async function connectionRoutes(fastify: FastifyInstance) {
     if (!c) return reply.status(404).send({ error: 'Not found' });
 
     const canViewAll = await canViewAllTraffic(req.user.role);
-    if (!canViewAll && c.userId !== req.user.sub) {
+    if (!canViewAll && !canViewConnection(req.user, c)) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
 
-    const [shareToken, userNameMap] = await Promise.all([
+    const [shareToken, userNameMap, institutionNameMap] = await Promise.all([
       ensureConnectionShareToken(c.id),
       loadUserNameMap([c.userId]),
+      loadInstitutionNameMap([(c as any).institutionId]),
     ]);
     const userName = typeof c.userId === 'number' ? userNameMap.get(c.userId) : undefined;
-    reply.send({ ...fmtConnectionDetail(c as any, (c as any).server?.name, userName), share_token: shareToken });
+    const institutionName = typeof (c as any).institutionId === 'number'
+      ? institutionNameMap.get((c as any).institutionId)
+      : undefined;
+    reply.send({
+      ...fmtConnectionDetail(c as any, (c as any).server?.name, userName, institutionName),
+      share_token: shareToken,
+    });
+  });
+
+  // GET /api/institutions — privileged dropdown data for institution filters
+  fastify.get('/institutions', { preHandler: [authenticate, requireRole('admin', 'monitor')] }, async (_req, reply) => {
+    const institutions = await gazelle.gazelleInstitution.findMany({
+      where: { activated: true },
+      select: { id: true, name: true, keyword: true },
+      orderBy: { name: 'asc' },
+    });
+    reply.send((institutions as GazelleInstitutionRow[]).map((institution) => ({
+      id: institution.id,
+      name: institution.name,
+      keyword: institution.keyword,
+    })));
   });
 
   // GET /api/users  — privileged: list all Gazelle users for filter dropdown
   fastify.get('/users', { preHandler: authenticateHook }, async (req, reply) => {
-    if (!(await canViewAllTraffic(req.user.role))) {
-      return reply.status(403).send({ error: 'Forbidden' });
+    const canAll = await canViewAllTraffic(req.user.role);
+
+    const { institution_id } = req.query as Record<string, string>;
+
+    let institutionIds: number[];
+    if (canAll) {
+      // Admin/monitor: respect the provided institution_id filter (or show all if omitted)
+      institutionIds = institution_id
+        ? institution_id.split(',').map((v) => parseInt(v, 10)).filter((v) => !Number.isNaN(v))
+        : [];
+    } else {
+      // Non-privileged: force-scope to the user's own institution
+      if (typeof req.user.institutionId !== 'number') {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      institutionIds = [req.user.institutionId];
     }
 
     const users = await gazelle.gazelleUser.findMany({
-      where: { activated: true, blocked: false },
+      where: {
+        activated: true,
+        blocked: false,
+        ...(institutionIds.length > 0 ? { institutionId: { in: institutionIds } } : {}),
+      },
       select: { id: true, username: true, firstname: true, lastname: true, roles: { select: { roleId: true } } },
       orderBy: { username: 'asc' },
     });

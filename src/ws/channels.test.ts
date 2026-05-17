@@ -5,7 +5,7 @@ import type { JwtPayload } from '../lib/jwt';
 const admin: JwtPayload   = { sub: 1, username: 'admin', role: 'admin' };
 const monitor: JwtPayload = { sub: 2, username: 'mon',   role: 'monitor' };
 const oauth2: JwtPayload  = { sub: 3, username: 'oauth', role: 'oauth2' };
-const user: JwtPayload    = { sub: 10, username: 'bob',  role: 'user' };
+const user: JwtPayload    = { sub: 10, username: 'bob',  role: 'user', institutionId: 456, institutionName: 'Taiwan Hospital' };
 
 const SERVER_UUID = '123e4567-e89b-12d3-a456-426614174000';
 
@@ -64,6 +64,21 @@ describe('canSubscribe', () => {
 
   it("denies user from subscribing to another user's traffic channel", () => {
     expect(canSubscribe(user, 'traffic:user:99')).toBe(false);
+  });
+
+  // ── traffic:institution:{id} ───────────────────────────────────────────────
+  it('allows a user to subscribe to their institution traffic channel', () => {
+    expect(canSubscribe(user, 'traffic:institution:456')).toBe(true);
+  });
+
+  it('denies a user from subscribing to another institution traffic channel', () => {
+    expect(canSubscribe(user, 'traffic:institution:999')).toBe(false);
+  });
+
+  it('allows privileged roles to subscribe to any institution traffic channel', () => {
+    expect(canSubscribe(admin, 'traffic:institution:456')).toBe(true);
+    expect(canSubscribe(monitor, 'traffic:institution:456')).toBe(true);
+    expect(canSubscribe(oauth2, 'traffic:institution:456')).toBe(true);
   });
 
   // ── server:{uuid} ──────────────────────────────────────────────────────────

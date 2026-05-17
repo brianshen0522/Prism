@@ -21,7 +21,7 @@ export function genCondId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export type FilterField = 'scope' | 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'text';
+export type FilterField = 'scope' | 'server_id' | 'method' | 'status' | 'res_status_code' | 'user_id' | 'institution_id' | 'text';
 
 export interface FilterCondition {
   id: string;
@@ -610,6 +610,7 @@ const FILTER_FIELD_OPTIONS: { value: FilterField; label: string }[] = [
   { value: 'status', label: 'Status' },
   { value: 'res_status_code', label: 'Status code' },
   { value: 'user_id', label: 'User' },
+  { value: 'institution_id', label: 'Institution' },
   { value: 'text', label: 'Text' },
 ];
 const FILTER_CONTROL_CLS = 'w-full sm:w-[180px] sm:shrink-0';
@@ -648,12 +649,14 @@ function ConditionValueInput({
   serverOptions,
   statusCodeOptions,
   userOptions,
+  institutionOptions,
   onChange,
 }: {
   condition: FilterCondition;
   serverOptions: { value: string; label: string }[];
   statusCodeOptions: { value: string; label: string }[];
   userOptions: { value: string; label: string }[];
+  institutionOptions: { value: string; label: string }[];
   onChange: (patch: Partial<FilterCondition>) => void;
 }) {
   if (condition.field === 'scope') {
@@ -737,6 +740,20 @@ function ConditionValueInput({
     );
   }
 
+  if (condition.field === 'institution_id') {
+    return (
+      <MultiSelect
+        placeholder="Institutions"
+        options={institutionOptions}
+        selected={condition.values}
+        onChange={(values) => onChange({ values })}
+        filterable
+        searchPlaceholder="Search institutions..."
+        className={FILTER_CONTROL_CLS}
+      />
+    );
+  }
+
   if (condition.field === 'text') {
     return (
       <>
@@ -777,7 +794,9 @@ export function ConnectionFilterBuilder({
   serverOptions,
   statusCodeOptions,
   userOptions,
+  institutionOptions,
   allowUserFilter,
+  allowInstitutionFilter = false,
   allowScopeFilter = false,
   onRequiredChange,
   onChange,
@@ -787,7 +806,9 @@ export function ConnectionFilterBuilder({
   serverOptions: { value: string; label: string }[];
   statusCodeOptions: { value: string; label: string }[];
   userOptions: { value: string; label: string }[];
+  institutionOptions?: { value: string; label: string }[];
   allowUserFilter: boolean;
+  allowInstitutionFilter?: boolean;
   allowScopeFilter?: boolean;
   onRequiredChange?: (conditions: FilterCondition[]) => void;
   onChange: (conditions: FilterCondition[]) => void;
@@ -800,6 +821,7 @@ export function ConnectionFilterBuilder({
 
   const availableFieldOptions = FILTER_FIELD_OPTIONS.filter((option) => {
     if (!allowUserFilter && option.value === 'user_id') return false;
+    if (!allowInstitutionFilter && option.value === 'institution_id') return false;
     if (!allowScopeFilter && option.value === 'scope') return false;
     return true;
   });
@@ -847,6 +869,7 @@ export function ConnectionFilterBuilder({
                 serverOptions={serverOptions}
                 statusCodeOptions={statusCodeOptions}
                 userOptions={userOptions}
+                institutionOptions={institutionOptions ?? []}
                 onChange={(patch) => updateRequiredCondition(condition.id, patch)}
               />
             </div>
@@ -895,6 +918,7 @@ export function ConnectionFilterBuilder({
                   serverOptions={serverOptions}
                   statusCodeOptions={statusCodeOptions}
                   userOptions={userOptions}
+                  institutionOptions={institutionOptions ?? []}
                   onChange={(patch) => updateCondition(condition.id, patch)}
                 />
 

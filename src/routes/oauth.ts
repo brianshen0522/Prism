@@ -30,7 +30,11 @@ function parseCsvValues(input?: string) {
 export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/oauth/filter-options', { preHandler: [authenticate] }, async (request, reply) => {
     const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
-    return reply.send(await buildOAuthFilterOptions(canViewAllTraffic ? undefined : request.user.sub));
+    return reply.send(await buildOAuthFilterOptions(canViewAllTraffic
+      ? {}
+      : typeof request.user.institutionId === 'number'
+        ? { participantInstitutionId: request.user.institutionId }
+        : { participantUserId: request.user.sub }));
   });
 
   fastify.get('/oauth/pipelines', { preHandler: [authenticate] }, async (request, reply) => {
@@ -39,6 +43,7 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
       limit = '25',
       access_token,
       participant_user_id,
+      participant_institution_id,
       legal = 'all',
       success = 'all',
       authentication_server_id,
@@ -49,7 +54,18 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
 
-    const participantUserIds = (canViewAllTraffic ? parseCsvValues(participant_user_id) : [String(request.user.sub)])
+    const participantInstitutionIds = (canViewAllTraffic
+      ? parseCsvValues(participant_institution_id)
+      : typeof request.user.institutionId === 'number'
+        ? [String(request.user.institutionId)]
+        : [])
+      .map((value) => parseInt(value, 10))
+      .filter((value) => !Number.isNaN(value));
+    const participantUserIds = (canViewAllTraffic
+      ? parseCsvValues(participant_user_id)
+      : participantInstitutionIds.length > 0
+        ? []
+        : [String(request.user.sub)])
       .map((value) => parseInt(value, 10))
       .filter((value) => !Number.isNaN(value));
 
@@ -58,6 +74,7 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
       limit: limitNum,
       accessToken: access_token,
       participantUserIds,
+      participantInstitutionIds,
       legal: legal === 'legal' || legal === 'illegal' ? legal : 'all',
       success: success === 'success' || success === 'failed' ? success : 'all',
       authenticationServerIds: parseCsvValues(authentication_server_id),
@@ -101,7 +118,10 @@ export const oauthRoutes: FastifyPluginAsync = async (fastify) => {
     const result = await buildOAuthPipelineDetail(id);
     if (!result) return reply.status(404).send({ error: 'OAuth pipeline not found' });
     const canViewAllTraffic = await canRoleViewAllTraffic(request.user.role);
-    if (!canViewAllTraffic && result.summary.participant_user?.id !== request.user.sub) {
+    const sameInstitution = typeof request.user.institutionId === 'number' &&
+      result.summary.participant_institution?.id === request.user.institutionId;
+    const sameUser = result.summary.participant_user?.id === request.user.sub;
+    if (!canViewAllTraffic && !sameInstitution && !sameUser) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     const [shareToken, connectionShareTokens] = await Promise.all([

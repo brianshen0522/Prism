@@ -41,8 +41,6 @@ Failure workflows are also supported. The first version includes:
 
 ```bash
 cd simulators/oauth-stress
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
 ```
 

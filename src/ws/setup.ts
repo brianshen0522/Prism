@@ -33,7 +33,16 @@ export function setupWebSocket(server: Server): void {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wsManager.addClient(ws, user);
 
-      ws.send(JSON.stringify({ type: 'auth:ok', payload: { username: user.username, role: user.role }, ts: Date.now() }));
+      ws.send(JSON.stringify({
+        type: 'auth:ok',
+        payload: {
+          username: user.username,
+          role: user.role,
+          institution_id: user.institutionId ?? null,
+          institution_name: user.institutionName ?? null,
+        },
+        ts: Date.now(),
+      }));
 
       ws.on('message', (data) => {
         wsManager.handleMessage(ws, data.toString());

@@ -45,11 +45,11 @@ Core variables:
 
 - `PROXY_DB_HOST`, `PROXY_DB_PORT`, `PROXY_DB_NAME`, `PROXY_DB_USER`, `PROXY_DB_PASS`
 - `GAZELLE_DB_HOST`, `GAZELLE_DB_PORT`, `GAZELLE_DB_NAME`, `GAZELLE_DB_USER`, `GAZELLE_DB_PASS`
-- `JWT_SECRET`, `JWT_REFRESH_SECRET`
+- `JWT_SECRET`, `JWT_REFRESH_SECRET`, `PARTICIPANT_TOKEN_SECRET`
 - `APP_PORT`
 - `PROXY_PORT_START`, `PROXY_PORT_END`
 
-Keep JWT secrets long and random. Treat Gazelle as read-only.
+Keep JWT and participant token secrets long, random, and distinct. Treat Gazelle as read-only.
 
 ## Database Updates
 

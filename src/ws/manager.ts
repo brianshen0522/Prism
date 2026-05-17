@@ -92,6 +92,7 @@ class WSManager {
   emitConnectionNew(data: {
     id: string;
     userId: number | null;
+    institutionId?: number | null;
     username: string | null;
     serverId: string;
     reqMethod: string;
@@ -104,11 +105,15 @@ class WSManager {
     if (data.userId !== null) {
       this.emit(`traffic:user:${data.userId}`, msg);
     }
+    if (data.institutionId !== null && data.institutionId !== undefined) {
+      this.emit(`traffic:institution:${data.institutionId}`, msg);
+    }
   }
 
   emitConnectionCompleted(data: {
     id: string;
     userId: number | null;
+    institutionId?: number | null;
     serverId: string;
     resStatusCode: number;
     durationMs: number;
@@ -119,14 +124,25 @@ class WSManager {
     if (data.userId !== null) {
       this.emit(`traffic:user:${data.userId}`, msg);
     }
+    if (data.institutionId !== null && data.institutionId !== undefined) {
+      this.emit(`traffic:institution:${data.institutionId}`, msg);
+    }
   }
 
-  emitConnectionError(data: { id: string; userId: number | null; serverId: string }): void {
+  emitConnectionError(data: {
+    id: string;
+    userId: number | null;
+    institutionId?: number | null;
+    serverId: string;
+  }): void {
     const msg: WSMessage = { type: 'connection:error', payload: data, ts: Date.now() };
     this.emit('traffic:all', msg);
     this.emit(`server:${data.serverId}`, msg);
     if (data.userId !== null) {
       this.emit(`traffic:user:${data.userId}`, msg);
+    }
+    if (data.institutionId !== null && data.institutionId !== undefined) {
+      this.emit(`traffic:institution:${data.institutionId}`, msg);
     }
   }
 
@@ -142,6 +158,14 @@ class WSManager {
 
   emitServerHealth(serverId: string, payload: { isRunning: boolean; requestsLast5m: number }): void {
     this.emit(`server:${serverId}`, { type: 'server:health', payload, ts: Date.now() });
+  }
+
+  emitInstitutionTokenRegenned(institutionId: number, triggeredByUserId: number): void {
+    this.emit(`traffic:institution:${institutionId}`, {
+      type: 'token:institution_regenned',
+      payload: { institutionId, triggeredByUserId },
+      ts: Date.now(),
+    });
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

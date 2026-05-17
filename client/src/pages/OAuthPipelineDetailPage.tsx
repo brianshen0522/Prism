@@ -96,7 +96,7 @@ function summarizeTokenIssueProblems(tokenIssue: Awaited<ReturnType<typeof fetch
   if (!tokenIssue.connection_id) issues.push('No token request was matched.');
   if (tokenIssue.connection_id && !tokenIssue.participant_token_present) issues.push('Client request is missing the participant token.');
   if (tokenIssue.connection_id && tokenIssue.participant_token_present && !tokenIssue.participant_token_linked) {
-    issues.push('Participant token is expired or no longer linked to the pipeline user.');
+    issues.push('Participant token is expired or no longer linked to the pipeline institution.');
   }
   if (tokenIssue.connection_id && !tokenIssue.access_token_extracted) issues.push('Authentication server response did not expose an access token.');
   if (tokenIssue.connection_id && !tokenIssue.success) issues.push('Token issue did not complete successfully.');
@@ -117,7 +117,7 @@ function summarizeResourceProblems(call: Awaited<ReturnType<typeof fetchOAuthPip
   const issues: string[] = [];
   if (!call.participant_token_present) issues.push('Client request is missing the participant token.');
   if (call.participant_token_present && !call.participant_token_linked) {
-    issues.push('Participant token is expired or no longer linked to the pipeline user.');
+    issues.push('Participant token is expired or no longer linked to the pipeline institution.');
   }
   if (!call.success) issues.push('Resource call returned an unsuccessful status.');
   if (!call.validation) issues.push('Validation request is missing.');
@@ -128,7 +128,7 @@ function summarizeResourceProblems(call: Awaited<ReturnType<typeof fetchOAuthPip
 
 function humanizeDiagnostic(diagnostic: string) {
   if (diagnostic === 'unlinked_token_issue_participant' || diagnostic === 'unlinked_resource_participant') {
-    return 'Participant token expired or no longer linked to a user';
+    return 'Participant token expired or no longer linked to an institution';
   }
   if (diagnostic === 'missing_token_issue_participant_token' || diagnostic === 'missing_resource_participant_token') {
     return 'Participant token missing';
@@ -260,8 +260,8 @@ export function OAuthFlowMap({ summary, tokenIssue, resourceCalls, onInspectConn
 
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <ActorHeader
-            name={summary.participant_user?.name ?? summary.participant_user?.username ?? 'Client'}
-            subtitle="Client"
+            name={summary.participant_institution?.name ?? summary.participant_user?.name ?? summary.participant_user?.username ?? 'Client'}
+            subtitle={summary.participant_user ? `Client · ${summary.participant_user.name ?? summary.participant_user.username}` : 'Client'}
             status={clientStatus}
           />
           <ActorHeader
@@ -649,6 +649,10 @@ export function OAuthPipelineDetailPage() {
   }
 
   const { summary, token_issue, resource_calls } = data;
+  const participantName = summary.participant_institution?.name
+    ?? summary.participant_user?.name
+    ?? summary.participant_user?.username
+    ?? 'Unknown participant';
   const backHref = typeof location.state === 'object' && location.state !== null
     ? `${String((location.state as { fromPath?: string }).fromPath ?? '/traffic')}${String((location.state as { fromSearch?: string }).fromSearch ?? '?view=oauth')}`
     : '/traffic?view=oauth';
@@ -664,7 +668,7 @@ export function OAuthPipelineDetailPage() {
         <div className={cn('space-y-4 min-w-0', selectedConnectionId ? 'flex-1' : 'w-full')}>
           <PageHeader
             title="OAuth Pipeline"
-            description={`Started ${fmtDate(summary.started_at)} · ${summary.participant_user?.name ?? summary.participant_user?.username ?? 'Unknown participant'}`}
+            description={`Started ${fmtDate(summary.started_at)} · ${participantName}`}
             actions={(
               <>
                 <StatusBadge ok={summary.complete} trueLabel="Complete" falseLabel="Incomplete" />
@@ -676,7 +680,17 @@ export function OAuthPipelineDetailPage() {
           />
 
           <div className="grid gap-4 md:grid-cols-4">
-        <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Participant</p><p className="text-sm font-medium">{summary.participant_user?.name ?? summary.participant_user?.username ?? '—'}</p></CardContent></Card>
+        <Card>
+          <CardContent className="p-4 space-y-1">
+            <p className="text-xs uppercase tracking-wide text-gray-400">Participant Institution</p>
+            <p className="text-sm font-medium">{summary.participant_institution?.name ?? '—'}</p>
+            {summary.participant_user && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                user: {summary.participant_user.name ?? summary.participant_user.username}
+              </p>
+            )}
+          </CardContent>
+        </Card>
         <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Authentication Server</p><p className="text-sm font-medium">{summary.authentication_server?.name ?? '—'}</p></CardContent></Card>
         <Card>
           <CardContent className="p-4 space-y-2">

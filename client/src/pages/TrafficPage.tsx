@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { RefreshCw, Radio, RadioTower, SlidersHorizontal, X } from 'lucide-react';
+import { Building2, RefreshCw, Radio, RadioTower, SlidersHorizontal, X } from 'lucide-react';
 import {
   clearAllTraffic,
   fetchConnections,
@@ -9,6 +9,7 @@ import {
   fetchDashboardServers,
   fetchOAuthFilterOptions,
   fetchOAuthPipelines,
+  fetchInstitutions,
   fetchTrafficAccessPolicy,
   fetchUsers,
   type ConnectionSummary,
@@ -60,6 +61,46 @@ function syncStatusCodeRequired(conditions: FilterCondition[]): FilterCondition[
 
 // ─── Connection row ───────────────────────────────────────────────────────────
 
+function ParticipantTokenBadge({ c }: { c: ConnectionSummary }) {
+  if (!c.participant_token_present) {
+    return (
+      <Badge className="bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+        Token: none
+      </Badge>
+    );
+  }
+
+  if (c.participant_token_valid === true) {
+    return (
+      <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+        Token: valid
+      </Badge>
+    );
+  }
+
+  if (c.participant_token_invalid_reason === 'expired') {
+    return (
+      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+        Token: expired
+      </Badge>
+    );
+  }
+
+  if (c.participant_token_invalid_reason === 'revoked') {
+    return (
+      <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+        Token: revoked
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+      Token: invalid
+    </Badge>
+  );
+}
+
 function TrafficRow({ c, isNew, selected, onSelect }: {
   c: ConnectionSummary;
   isNew: boolean;
@@ -76,12 +117,28 @@ function TrafficRow({ c, isNew, selected, onSelect }: {
     >
       <td className={`sticky left-0 z-10 px-4 py-2.5 text-xs whitespace-nowrap ${selected ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-white dark:bg-gray-900'} text-gray-400 dark:text-gray-500`}>{fmtDate(c.req_timestamp)}</td>
       <td
-        className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap truncate"
-        title={c.user_id != null ? `${c.user_name ?? `User ${c.user_id}`} (#${c.user_id})` : undefined}
+        className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400"
+        title={[
+          c.institution_id != null ? `${c.institution_name ?? `Institution ${c.institution_id}`} (#${c.institution_id})` : null,
+          c.user_id != null ? `user: ${c.user_name ?? `User ${c.user_id}`} (#${c.user_id})` : null,
+        ].filter(Boolean).join(' · ') || undefined}
       >
-        {c.user_id != null
-          ? (c.user_name ?? `User ${c.user_id}`)
-          : <span className="text-gray-300 dark:text-gray-600">anon</span>}
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
+            <span className="truncate font-medium text-gray-700 dark:text-gray-200">
+              {c.institution_id != null
+                ? (c.institution_name ?? `Institution ${c.institution_id}`)
+                : 'Anonymous'}
+            </span>
+          </div>
+          {c.user_id != null && (
+            <div className="truncate text-[11px] text-gray-400 dark:text-gray-500">
+              user: {c.user_name ?? `User ${c.user_id}`}
+            </div>
+          )}
+          <ParticipantTokenBadge c={c} />
+        </div>
       </td>
       <td className="px-4 py-2.5"><Badge className={methodColor(c.req_method)}>{c.req_method}</Badge></td>
       <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-gray-300 max-w-xs truncate" title={c.req_host ? `${c.req_host}${c.req_url}` : c.req_url}>
@@ -120,7 +177,16 @@ function OAuthPipelineRow({ pipeline, onSelect }: { pipeline: OAuthPipelineListI
         {pipeline.started_at ? fmtDate(pipeline.started_at) : '—'}
       </td>
       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">
-        {pipeline.participant_user?.name ?? pipeline.participant_user?.username ?? '—'}
+        <div className="space-y-1">
+          <div className="font-medium text-gray-700 dark:text-gray-200">
+            {pipeline.participant_institution?.name ?? '—'}
+          </div>
+          {pipeline.participant_user && (
+            <div className="text-[11px] text-gray-400 dark:text-gray-500">
+              user: {pipeline.participant_user.name ?? pipeline.participant_user.username}
+            </div>
+          )}
+        </div>
       </td>
       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
         {pipeline.authentication_server?.name ?? '—'}
@@ -187,8 +253,13 @@ function OAuthPipelineMobileCard({ pipeline, onSelect }: { pipeline: OAuthPipeli
             {pipeline.started_at ? fmtDate(pipeline.started_at) : '—'}
           </p>
           <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {pipeline.participant_user?.name ?? pipeline.participant_user?.username ?? 'Unknown participant'}
+            {pipeline.participant_institution?.name ?? 'Unknown institution'}
           </p>
+          {pipeline.participant_user && (
+            <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+              user: {pipeline.participant_user.name ?? pipeline.participant_user.username}
+            </p>
+          )}
         </div>
         <Badge className={pipeline.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
           {pipeline.success ? 'success' : 'failed'}
@@ -235,7 +306,12 @@ export function TrafficPage() {
   const [debouncedConditions, setDebouncedConditions] = useState<FilterCondition[]>([]);
   const [oauthAccessToken, setOauthAccessToken] = useState(() => searchParams.get('oauth_access_token') ?? '');
   const [debouncedOauthAccessToken, setDebouncedOauthAccessToken] = useState('');
-  const [oauthParticipantUserIds, setOauthParticipantUserIds] = useState<string[]>(() => (searchParams.get('oauth_participant_user_id') ?? '').split(',').filter(Boolean));
+  const [oauthParticipantInstitutionIds, setOauthParticipantInstitutionIds] = useState<string[]>(() => (
+    searchParams.get('oauth_participant_institution_id') ?? ''
+  ).split(',').filter(Boolean));
+  const [oauthParticipantUserIds, setOauthParticipantUserIds] = useState<string[]>(() => (
+    searchParams.get('oauth_participant_user_id') ?? ''
+  ).split(',').filter(Boolean));
   const [oauthAuthServerIds, setOauthAuthServerIds] = useState<string[]>(() => (searchParams.get('oauth_authentication_server_id') ?? '').split(',').filter(Boolean));
   const [oauthResourceServerIds, setOauthResourceServerIds] = useState<string[]>(() => (searchParams.get('oauth_resource_server_id') ?? '').split(',').filter(Boolean));
   const [oauthLegal, setOauthLegal] = useState<'all' | 'legal' | 'illegal'>(() => {
@@ -272,6 +348,9 @@ export function TrafficPage() {
       if (oauthAccessToken.trim()) prev.set('oauth_access_token', oauthAccessToken.trim());
       else prev.delete('oauth_access_token');
 
+      if (oauthParticipantInstitutionIds.length > 0) prev.set('oauth_participant_institution_id', oauthParticipantInstitutionIds.join(','));
+      else prev.delete('oauth_participant_institution_id');
+
       if (oauthParticipantUserIds.length > 0) prev.set('oauth_participant_user_id', oauthParticipantUserIds.join(','));
       else prev.delete('oauth_participant_user_id');
 
@@ -289,7 +368,7 @@ export function TrafficPage() {
 
       return prev;
     });
-  }, [showHeartbeatTraffic, oauthAccessToken, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
+  }, [showHeartbeatTraffic, oauthAccessToken, oauthParticipantInstitutionIds, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
 
   const view = (searchParams.get('view') ?? 'raw') as 'raw' | 'oauth';
   const sort      = searchParams.get('sort')  ?? 'req_timestamp';
@@ -301,6 +380,10 @@ export function TrafficPage() {
     enabled: !!currentUser,
   });
   const canViewAllTraffic = trafficAccessPolicy?.can_view_all_traffic ?? false;
+  const isAdmin = currentUser?.role === 'admin';
+  const canUseInstitutionFilter = isAdmin || currentUser?.role === 'monitor';
+  const canUseUserFilter = !!currentUser;        // raw traffic: all roles
+  const canUseUserFilterOAuth = canViewAllTraffic; // OAuth: privileged only
   const trafficScope = canViewAllTraffic ? 'all' : 'mine';
   const handleRequiredChange = (next: FilterCondition[]) => setRequiredConditions(syncStatusCodeRequired(next));
 
@@ -323,9 +406,48 @@ export function TrafficPage() {
 
   useEffect(() => {
     if (canViewAllTraffic) return;
-    setConditions((current) => current.filter((condition) => condition.field !== 'user_id'));
+    setConditions((current) => current.filter((condition) => condition.field !== 'user_id' && condition.field !== 'institution_id'));
+    setOauthParticipantInstitutionIds([]);
     setOauthParticipantUserIds([]);
   }, [canViewAllTraffic]);
+
+  // Derived: selected institution IDs from the institution_id filter condition (admin cascade)
+  const selectedInstitutionIdsStr = useMemo(() => {
+    if (!canUseInstitutionFilter) return '';
+    const cond = conditions.find((c) => c.field === 'institution_id');
+    return (cond?.values ?? []).join(',');
+  }, [conditions, canUseInstitutionFilter]);
+  const selectedInstitutionIds = useMemo(
+    () => (selectedInstitutionIdsStr ? selectedInstitutionIdsStr.split(',') : []),
+    [selectedInstitutionIdsStr],
+  );
+
+  // Derived: institution IDs used for OAuth user filter cascade (admin only)
+  const oauthInstStr = useMemo(
+    () => (canUseInstitutionFilter ? oauthParticipantInstitutionIds : []).join(','),
+    [canUseInstitutionFilter, oauthParticipantInstitutionIds],
+  );
+
+  // When admin changes institution filter → clear user filter (raw traffic)
+  const prevInstStrRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevInstStrRef.current === null) { prevInstStrRef.current = selectedInstitutionIdsStr; return; }
+    if (prevInstStrRef.current === selectedInstitutionIdsStr) return;
+    prevInstStrRef.current = selectedInstitutionIdsStr;
+    setConditions((prev) => {
+      if (!prev.some((c) => c.field === 'user_id' && c.values.length > 0)) return prev;
+      return prev.map((c) => (c.field === 'user_id' ? { ...c, values: [] } : c));
+    });
+  }, [selectedInstitutionIdsStr]);
+
+  // When admin changes institution filter → clear user filter (OAuth)
+  const prevOauthInstStrRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevOauthInstStrRef.current === null) { prevOauthInstStrRef.current = oauthInstStr; return; }
+    if (prevOauthInstStrRef.current === oauthInstStr) return;
+    prevOauthInstStrRef.current = oauthInstStr;
+    setOauthParticipantUserIds([]);
+  }, [oauthInstStr]);
 
   const resetAll = () => {
     setRequiredConditions(createGlobalRequiredConditions());
@@ -340,7 +462,11 @@ export function TrafficPage() {
   };
 
   const { data: servers = [] } = useQuery({ queryKey: ['dashboard-servers'], queryFn: fetchDashboardServers });
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: fetchUsers, enabled: canViewAllTraffic });
+  const { data: institutions = [] } = useQuery({
+    queryKey: ['institutions'],
+    queryFn: fetchInstitutions,
+    enabled: canUseInstitutionFilter,
+  });
   const { data: filterOptions } = useQuery({
     queryKey: ['connection-filter-options', trafficScope],
     queryFn: () => fetchConnectionFilterOptions({ scope: trafficScope }),
@@ -351,15 +477,27 @@ export function TrafficPage() {
     queryFn: fetchOAuthFilterOptions,
     enabled: view === 'oauth',
   });
+  const { data: rawUsers = [] } = useQuery({
+    queryKey: ['users', selectedInstitutionIdsStr],
+    queryFn: () => fetchUsers({ institution_id: selectedInstitutionIds }),
+    enabled: canUseUserFilter && view === 'raw',
+  });
+  const { data: oauthUsers = [] } = useQuery({
+    queryKey: ['users', oauthInstStr],
+    queryFn: () => fetchUsers({ institution_id: oauthInstStr ? oauthInstStr.split(',') : [] }),
+    enabled: canUseUserFilterOAuth && view === 'oauth',
+  });
 
   const activeDebouncedConditions = [...requiredConditions, ...debouncedConditions].filter(isFilterConditionActive);
   const filtersString = activeDebouncedConditions.length > 0 ? JSON.stringify(activeDebouncedConditions) : undefined;
   const serverOptions = servers.map((server) => ({ value: server.id, label: server.name }));
   const statusCodeOptions = (filterOptions?.status_codes ?? []).map((code) => ({ value: String(code), label: String(code) }));
-  const userOptions = users.map((user) => ({
-    value: String(user.id),
-    label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
+  const institutionOptions = institutions.map((institution) => ({
+    value: String(institution.id),
+    label: institution.keyword ? `${institution.name} (${institution.keyword})` : institution.name,
   }));
+  const userOptions = rawUsers.map((u) => ({ value: String(u.id), label: u.name }));
+  const oauthUserOptions = oauthUsers.map((u) => ({ value: String(u.id), label: u.name }));
 
   const queryKey = [
     'connections-global',
@@ -395,6 +533,7 @@ export function TrafficPage() {
       'oauth-pipelines',
       trafficScope,
       debouncedOauthAccessToken,
+      oauthParticipantInstitutionIds.join(','),
       oauthParticipantUserIds.join(','),
       oauthAuthServerIds.join(','),
       oauthResourceServerIds.join(','),
@@ -405,6 +544,7 @@ export function TrafficPage() {
       page: pageParam,
       limit: LIMIT,
       access_token: debouncedOauthAccessToken || undefined,
+      participant_institution_id: oauthParticipantInstitutionIds,
       participant_user_id: oauthParticipantUserIds,
       authentication_server_id: oauthAuthServerIds,
       resource_server_id: oauthResourceServerIds,
@@ -450,7 +590,13 @@ export function TrafficPage() {
     }
   }, [qc, queryKey]);
 
-  const wsChannel = canViewAllTraffic ? 'traffic:all' : (currentUser ? `traffic:user:${currentUser.sub}` : '');
+  const wsChannel = canViewAllTraffic
+    ? 'traffic:all'
+    : currentUser?.institutionId
+      ? `traffic:institution:${currentUser.institutionId}`
+      : currentUser
+        ? `traffic:user:${currentUser.sub}`
+        : '';
   useWebSocket({ channels: wsChannel ? [wsChannel] : [], onMessage: handleWsMessage, enabled: !!wsChannel && live && view === 'raw' });
 
   const clearTrafficMut = useMutation({
@@ -561,7 +707,9 @@ export function TrafficPage() {
               serverOptions={serverOptions}
               statusCodeOptions={statusCodeOptions}
               userOptions={userOptions}
-              allowUserFilter={canViewAllTraffic}
+              institutionOptions={institutionOptions}
+              allowUserFilter={canUseUserFilter}
+              allowInstitutionFilter={canUseInstitutionFilter}
               onRequiredChange={handleRequiredChange}
               onChange={setConditions}
             />
@@ -593,22 +741,37 @@ export function TrafficPage() {
                   className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 />
               </div>
-              {canViewAllTraffic && (
+              {canUseInstitutionFilter && (
                 <div>
                     <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      Participant user
+                      Participant institution
                     </label>
                     <MultiSelect
-                      placeholder="users"
-                      options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
-                        value: String(user.id),
-                        label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
+                      placeholder="institutions"
+                      options={(oauthFilterOptions?.participant_institutions ?? []).map((institution) => ({
+                        value: String(institution.id),
+                        label: institution.keyword ? `${institution.name} (${institution.keyword})` : institution.name,
                       }))}
-                      selected={oauthParticipantUserIds}
-                      onChange={setOauthParticipantUserIds}
+                      selected={oauthParticipantInstitutionIds}
+                      onChange={setOauthParticipantInstitutionIds}
                       filterable
-                      searchPlaceholder="Filter users..."
+                      searchPlaceholder="Filter institutions..."
                     />
+                </div>
+              )}
+              {canUseUserFilterOAuth && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Participant user
+                  </label>
+                  <MultiSelect
+                    placeholder="users"
+                    options={oauthUserOptions}
+                    selected={oauthParticipantUserIds}
+                    onChange={setOauthParticipantUserIds}
+                    filterable
+                    searchPlaceholder="Filter users..."
+                  />
                 </div>
               )}
               <div>
@@ -676,6 +839,7 @@ export function TrafficPage() {
                 size="sm"
                 onClick={() => {
                   setOauthAccessToken('');
+                  setOauthParticipantInstitutionIds([]);
                   setOauthParticipantUserIds([]);
                   setOauthAuthServerIds([]);
                   setOauthResourceServerIds([]);
@@ -703,8 +867,10 @@ export function TrafficPage() {
                 conditions={conditions}
                 serverOptions={serverOptions}
                 statusCodeOptions={statusCodeOptions}
-                userOptions={userOptions}
-                allowUserFilter={canViewAllTraffic}
+                userOptions={[]}
+                institutionOptions={institutionOptions}
+                allowUserFilter={false}
+                allowInstitutionFilter={canUseInstitutionFilter}
                 onRequiredChange={handleRequiredChange}
                 onChange={setConditions}
               />
@@ -734,22 +900,37 @@ export function TrafficPage() {
                   className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 />
               </div>
-              {canViewAllTraffic && (
+              {canUseInstitutionFilter && (
                 <div>
                     <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      Participant user
+                      Participant institution
                     </label>
                     <MultiSelect
-                      placeholder="users"
-                      options={(oauthFilterOptions?.participant_users ?? []).map((user) => ({
-                        value: String(user.id),
-                        label: user.name !== user.username ? `${user.name} (${user.username})` : user.username,
+                      placeholder="institutions"
+                      options={(oauthFilterOptions?.participant_institutions ?? []).map((institution) => ({
+                        value: String(institution.id),
+                        label: institution.keyword ? `${institution.name} (${institution.keyword})` : institution.name,
                       }))}
-                      selected={oauthParticipantUserIds}
-                      onChange={setOauthParticipantUserIds}
+                      selected={oauthParticipantInstitutionIds}
+                      onChange={setOauthParticipantInstitutionIds}
                       filterable
-                      searchPlaceholder="Filter users..."
+                      searchPlaceholder="Filter institutions..."
                     />
+                </div>
+              )}
+              {canUseUserFilterOAuth && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Participant user
+                  </label>
+                  <MultiSelect
+                    placeholder="users"
+                    options={oauthUserOptions}
+                    selected={oauthParticipantUserIds}
+                    onChange={setOauthParticipantUserIds}
+                    filterable
+                    searchPlaceholder="Filter users..."
+                  />
                 </div>
               )}
               <div>
@@ -817,6 +998,7 @@ export function TrafficPage() {
                 size="sm"
                 onClick={() => {
                   setOauthAccessToken('');
+                  setOauthParticipantInstitutionIds([]);
                   setOauthParticipantUserIds([]);
                   setOauthAuthServerIds([]);
                   setOauthResourceServerIds([]);
@@ -847,10 +1029,10 @@ export function TrafficPage() {
               />
               ) : (
                 <>
-                  <table className="min-w-[1400px] w-full table-fixed text-sm">
+                  <table className="min-w-[1480px] w-full table-fixed text-sm">
                     <colgroup>
                       <col className="w-[168px]" />
-                      <col className="w-[168px]" />
+                      <col className="w-[240px]" />
                       <col className="w-[96px]" />
                       <col />
                       <col className="w-[140px]" />
@@ -863,7 +1045,7 @@ export function TrafficPage() {
                     <thead>
                       <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                         <SortTh col="req_timestamp"  label="Time"     sort={sort} order={order} onSort={handleSort} />
-                        <th className="px-4 py-3 font-medium">Participant</th>
+                        <th className="px-4 py-3 font-medium">Institution</th>
                         <th className="px-4 py-3 font-medium">Method</th>
                         <th className="px-4 py-3 font-medium">URL</th>
                         <th className="px-4 py-3 font-medium">Server</th>
@@ -931,7 +1113,7 @@ export function TrafficPage() {
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                       <th className="px-4 py-3 font-medium">Started</th>
-                      <th className="px-4 py-3 font-medium">Participant</th>
+                      <th className="px-4 py-3 font-medium">Institution</th>
                       <th className="px-4 py-3 font-medium">Auth server</th>
                       <th className="px-4 py-3 font-medium">Resource servers</th>
                       <th className="px-4 py-3 font-medium">Access token</th>

@@ -21,7 +21,7 @@ function validateKnownSetting(key: string, value: string): string | null {
     case 'participant_token_ttl_minutes': {
       const n = Number(trimmed);
       if (!Number.isInteger(n)) return 'participant_token_ttl_minutes must be an integer';
-      if (n < 1 || n > 1440) return 'participant_token_ttl_minutes must be between 1 and 1440';
+      if (n < 1 || n > 43200) return 'participant_token_ttl_minutes must be between 1 and 43200';
       return null;
     }
 

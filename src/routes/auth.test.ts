@@ -13,6 +13,13 @@ vi.mock('../db/gazelle', () => ({
 
 vi.mock('../db/prism', () => ({
   prism: {
+    backendServer: {
+      findMany: vi.fn(),
+    },
+    participantToken: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
     refreshToken: {
       create: vi.fn(),
       findFirst: vi.fn(),
@@ -25,6 +32,8 @@ vi.mock('../db/prism', () => ({
 import { buildApp } from '../app';
 import { gazelle } from '../db/gazelle';
 import { prism } from '../db/prism';
+import { verifyAccessToken } from '../lib/jwt';
+import * as participantToken from '../lib/participant-token';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -38,6 +47,12 @@ const MOCK_USER = {
   email: 'brian@example.com',
   firstname: 'Brian',
   lastname: 'Chen',
+  institutionId: 456,
+  institution: {
+    id: 456,
+    name: 'Taiwan Hospital',
+    keyword: 'TWH',
+  },
   activated: true,
   blocked: false,
   lastLogin: null,
@@ -72,6 +87,8 @@ describe('Auth routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prism.backendServer.findMany).mockResolvedValue([]);
+    vi.mocked(prism.participantToken.findUnique).mockResolvedValue(null);
     vi.mocked(prism.refreshToken.create).mockResolvedValue({} as any);
     vi.mocked(prism.refreshToken.delete).mockResolvedValue({} as any);
     vi.mocked(prism.refreshToken.deleteMany).mockResolvedValue({ count: 0 } as any);
@@ -103,6 +120,13 @@ describe('Auth routes', () => {
       const body = res.json();
       expect(body.access_token).toBeDefined();
       expect(body.refresh_token).toBeDefined();
+      expect(verifyAccessToken(body.access_token)).toMatchObject({
+        sub: 42,
+        username: 'brian9429',
+        role: 'admin',
+        institutionId: 456,
+        institutionName: 'Taiwan Hospital',
+      });
       expect(body.user).toMatchObject({
         id: 42,
         username: 'brian9429',
@@ -111,6 +135,26 @@ describe('Auth routes', () => {
         lastname: 'Chen',
         role: 'admin',
       });
+      expect(body.institution).toEqual({
+        id: 456,
+        name: 'Taiwan Hospital',
+        keyword: 'TWH',
+      });
+    });
+
+    it('returns 500 when authenticated user has no institution', async () => {
+      vi.mocked(gazelle.gazelleUser.findUnique).mockResolvedValue(
+        { ...MOCK_USER, institutionId: null, institution: null } as any,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: 'brian9429', password: 'Shen@9429' },
+      });
+
+      expect(res.statusCode).toBe(500);
+      expect(res.json().error).toMatch(/institution/i);
     });
 
     it('returns 401 for wrong password', async () => {
@@ -230,8 +274,41 @@ describe('Auth routes', () => {
       const body = res.json();
       expect(body.access_token).toBeDefined();
       expect(body.refresh_token).toBeDefined();
+      expect(body.institution).toEqual({
+        id: 456,
+        name: 'Taiwan Hospital',
+        keyword: 'TWH',
+      });
+      expect(body.institution_changed).toBe(false);
       // Rotated — new token must differ from the original
       expect(body.refresh_token).not.toBe(rawToken);
+    });
+
+    it('regenerates participant token when the institution has changed', async () => {
+      const rawToken = crypto.randomBytes(64).toString('hex');
+      const generateSpy = vi
+        .spyOn(participantToken, 'generateParticipantToken')
+        .mockResolvedValue({} as any);
+
+      vi.mocked(prism.refreshToken.findFirst).mockResolvedValue(
+        makeStoredRefreshToken(rawToken) as any,
+      );
+      vi.mocked(prism.participantToken.findUnique).mockResolvedValue({
+        institutionId: 123,
+      } as any);
+      vi.mocked(gazelle.gazelleUser.findUnique).mockResolvedValue(
+        { ...MOCK_USER, institution: { ...MOCK_USER.institution, id: 456 } } as any,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/refresh',
+        payload: { refresh_token: rawToken },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().institution_changed).toBe(true);
+      expect(generateSpy).toHaveBeenCalledWith(42, 456);
     });
 
     it('deletes the old refresh token on use (rotation)', async () => {

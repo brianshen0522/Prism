@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor } from 'lucide-react';
+import { LogOut, KeyRound, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor, Users } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type Theme } from '../store/theme';
 import { logout } from '../lib/api';
@@ -11,6 +11,7 @@ const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const;
 const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
 
 const adminLinks = [
+  { to: '/users', label: 'Users', icon: Users },
   { to: '/servers', label: 'Servers', icon: Server },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -48,66 +49,72 @@ export function NavBar() {
 
   return (
     <>
-      <nav className="h-14 border-b border-gray-200 bg-white flex items-center px-4 md:px-6 gap-4 shrink-0 dark:border-gray-700 dark:bg-gray-900">
-        <Link to="/" className="font-bold text-blue-600 text-lg tracking-tight mr-1 shrink-0">
-          Prism
-        </Link>
-
-        <div className="hidden md:flex items-center gap-6 min-w-0">
-          {links.map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className={cn(
-                'flex items-center gap-1.5 text-sm font-medium transition-colors whitespace-nowrap',
-                pathname.startsWith(to)
-                  ? 'text-blue-600'
-                  : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </Link>
-          ))}
-        </div>
-
-        <div className="ml-auto hidden md:flex items-center gap-4">
-          {user && (
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-medium text-gray-700 dark:text-gray-300">{user.username}</span>
-              {' · '}
-              <span className="capitalize">{user.role}</span>
-            </span>
-          )}
+      <nav className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-4 md:px-6 shrink-0 dark:border-gray-700 dark:bg-gray-900">
+        {/* Left: hamburger + logo + desktop nav links */}
+        <div className="flex items-center gap-6">
           <button
             type="button"
-            onClick={cycleTheme}
-            title={`Theme: ${THEME_LABEL[theme]} (click to cycle)`}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
+            onClick={() => setMobileOpen(true)}
+            className="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 lg:hidden dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
-            <ThemeIcon className="h-4 w-4" />
+            <Menu className="h-5 w-5" />
           </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </button>
+          <Link to="/" className="font-bold text-blue-600 text-lg tracking-tight shrink-0">
+            Prism
+          </Link>
+          <div className="hidden lg:flex items-center gap-5">
+            {links.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  'flex items-center gap-1.5 text-sm font-medium transition-colors whitespace-nowrap',
+                  pathname.startsWith(to)
+                    ? 'text-blue-600'
+                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Link>
+            ))}
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          className="ml-auto inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 md:hidden dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        {/* Right: desktop user info + hamburger */}
+        <div className="flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-4">
+            {user && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[220px] truncate" title={`${user.username} · ${user.institutionKeyword ?? user.institutionName} · ${user.role}`}>
+                <span className="font-medium text-gray-700 dark:text-gray-300">{user.username}</span>
+                {' · '}
+                <span>{user.institutionKeyword ?? user.institutionName}</span>
+                {' · '}
+                <span className="capitalize">{user.role}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={cycleTheme}
+              title={`Theme: ${THEME_LABEL[theme]} (click to cycle)`}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
+            >
+              <ThemeIcon className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors dark:text-gray-400 dark:hover:text-gray-100"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </button>
+          </div>
+        </div>
       </nav>
 
       <div
         className={cn(
-          'fixed inset-0 z-50 md:hidden transition-opacity duration-200',
+          'fixed inset-0 z-50 transition-opacity duration-200',
           mobileOpen ? 'pointer-events-auto bg-black/40 opacity-100' : 'pointer-events-none bg-black/0 opacity-0',
         )}
         onClick={() => setMobileOpen(false)}
@@ -123,9 +130,12 @@ export function NavBar() {
             <div>
               <p className="text-lg font-semibold text-blue-600">Prism</p>
               {user && (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {user.username} · <span className="capitalize">{user.role}</span>
-                </p>
+                <div className="mt-1">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{user.username}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {user.institutionKeyword ?? user.institutionName} · <span className="capitalize">{user.role}</span>
+                  </p>
+                </div>
               )}
             </div>
             <button

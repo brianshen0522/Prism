@@ -51,6 +51,7 @@ src/                        Backend source
     settings.ts             SystemSetting CRUD (admin only)
     oauth.ts                OAuth pipeline list/detail (filtered by role)
     integration-guide.ts    Per-user guide with curl snippets for each server
+    public.ts               Unauthenticated share-token routes (connection + pipeline views)
   oauth/
     reconcile.ts            Build OAuthPipeline records from raw Connection rows
     extract.ts              Extract token hashes/previews from proxied request bodies
@@ -71,12 +72,14 @@ src/                        Backend source
     jwt.ts                  sign / verify helpers
     password.ts             MD5 (Gazelle compatibility)
     tokens.ts               Refresh token CRUD (SHA-256 hashed before storage; rotate-on-use)
+    settings.ts             SystemSetting read helpers (cached)
+    share.ts                Share-token generation and lookup for connections + pipelines
 
 client/src/                 React frontend
   App.tsx                   Router (React Router v6)
   pages/                    One file per page/route
   components/               Layout, NavBar, ProtectedRoute, ui/
-  store/                    Zustand auth store
+  store/                    Zustand stores: auth (tokens + user) and theme (dark mode toggle)
   lib/
     api.ts                  Typed fetch wrapper (auto-refresh JWT)
     ws.ts                   WebSocket hook
@@ -88,6 +91,8 @@ compose.yml                 prism-app + postgres-prism
 Dockerfile                  Multi-stage build (builder → runtime)
 entrypoint.sh               prisma db push → node dist/index.js
 nginx/prism.conf            Nginx TLS termination config (proxy ports bypass nginx)
+simulators/                 oauth-simulator and oauth-stress test tools
+docs/                       Supplementary architecture, deployment, and feature guides
 ```
 
 ---
@@ -262,6 +267,8 @@ Header name is **cached in memory for 60 s** to avoid a DB hit on every proxied 
 
 Role comes from Gazelle `role_id`: 1 = admin, 2 = monitor, other = user. `oauth2` is a special role that can view all OAuth pipelines but has no other elevated access.
 
+After login, `admin`/`monitor`/`oauth2` roles are redirected to `/dashboard`; `user` role is redirected to `/guide`.
+
 ---
 
 ## WebSocket Channels
@@ -294,6 +301,15 @@ Results are stored in memory maps (`backendResults`, `heartbeatResults`) with th
 - `oauth/extract.ts` extracts access/refresh token hashes from request/response bodies during the proxy pipeline.
 - An `OAuthPipeline` groups one token-issuance `Connection` with all resource calls that present the same access token.
 - `legal = true` when the participant token was present on token issuance; `success = true` when at least one resource call and its validation both succeeded.
+
+---
+
+## Coding Style
+
+- Semicolons, single quotes, trailing commas, 2-space indentation in both TS and TSX.
+- `PascalCase` for React components and page files; `camelCase` for functions and variables.
+- No ESLint or Prettier configured — keep changes consistent with nearby files; rely on `tsc` and tests.
+- Backend tests live beside the module they cover (e.g., `src/routes/auth.test.ts`).
 
 ---
 

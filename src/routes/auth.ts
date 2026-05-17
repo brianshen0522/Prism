@@ -1,8 +1,10 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { gazelle } from '../db/gazelle';
+import { prism } from '../db/prism';
 import { verifyPassword } from '../lib/password';
 import { signAccessToken, JwtPayload } from '../lib/jwt';
+import { generateParticipantToken } from '../lib/participant-token';
 import { createRefreshToken, verifyAndRotateRefreshToken, revokeRefreshToken } from '../lib/tokens';
 import { authenticate } from '../plugins/authenticate';
 
@@ -11,6 +13,28 @@ function resolveRole(roleIds: number[]): 'admin' | 'monitor' | 'oauth2' | 'user'
   if (roleIds.includes(2)) return 'monitor';
   if (roleIds.includes(3)) return 'oauth2';
   return 'user';
+}
+
+interface AuthInstitution {
+  id: number;
+  name: string;
+  keyword: string | null;
+}
+
+function formatInstitution(user: {
+  institutionId: number | null;
+  institution: {
+    id: number;
+    name: string;
+    keyword: string | null;
+  } | null;
+}): AuthInstitution | null {
+  if (user.institutionId === null || !user.institution) return null;
+  return {
+    id: user.institution.id,
+    name: user.institution.name,
+    keyword: user.institution.keyword,
+  };
 }
 
 const loginBody = z.object({
@@ -37,7 +61,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     const user = await gazelle.gazelleUser.findUnique({
       where: { username },
-      include: { roles: true },
+      include: { roles: true, institution: true },
     });
 
     if (!user) {
@@ -54,8 +78,19 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const role = resolveRole(user.roles.map((r) => r.roleId));
+    const institution = formatInstitution(user);
+    if (!institution) {
+      request.log.error({ userId: user.id }, 'Authenticated Gazelle user has no institution');
+      return reply.status(500).send({ error: 'User institution is not configured' });
+    }
 
-    const payload: JwtPayload = { sub: user.id, username: user.username, role };
+    const payload: JwtPayload = {
+      sub: user.id,
+      username: user.username,
+      role,
+      institutionId: institution.id,
+      institutionName: institution.name,
+    };
     const accessToken = signAccessToken(payload);
     const refreshToken = await createRefreshToken(user.id);
 
@@ -70,6 +105,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         lastname: user.lastname,
         role,
       },
+      institution,
     });
   });
 
@@ -88,7 +124,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     // Re-fetch user for fresh role info
     const user = await gazelle.gazelleUser.findUnique({
       where: { id: stored.userId },
-      include: { roles: true },
+      include: { roles: true, institution: true },
     });
 
     if (!user || user.blocked || !user.activated) {
@@ -96,13 +132,46 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const role = resolveRole(user.roles.map((r) => r.roleId));
-    const payload: JwtPayload = { sub: user.id, username: user.username, role };
+    const institution = formatInstitution(user);
+    if (!institution) {
+      request.log.error({ userId: user.id }, 'Gazelle user has no institution during refresh');
+      return reply.status(500).send({ error: 'User institution is not configured' });
+    }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      username: user.username,
+      role,
+      institutionId: institution.id,
+      institutionName: institution.name,
+    };
     const accessToken = signAccessToken(payload);
     const newRefreshToken = await createRefreshToken(user.id);
+
+    const existingToken = await prism.participantToken.findUnique({
+      where: { userId: user.id },
+      select: { institutionId: true },
+    });
+
+    let institutionChanged = false;
+    if (existingToken !== null && existingToken.institutionId !== institution.id) {
+      await generateParticipantToken(user.id, institution.id);
+      institutionChanged = true;
+      request.log.info(
+        {
+          userId: user.id,
+          oldInstitutionId: existingToken.institutionId,
+          newInstitutionId: institution.id,
+        },
+        'Institution changed, participant token regenerated',
+      );
+    }
 
     return reply.status(200).send({
       access_token: accessToken,
       refresh_token: newRefreshToken,
+      institution,
+      institution_changed: institutionChanged,
     });
   });
 

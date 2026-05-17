@@ -1,34 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify';
-import crypto from 'crypto';
 import { prism } from '../db/prism';
 import { authenticate } from '../plugins/authenticate';
-
-const DEFAULT_HEADER = 'X-Participant-Token';
-const DEFAULT_TTL_MINUTES = 5;
+import { ensureParticipantToken, getParticipantHeaderName } from '../lib/participant-token';
 
 type BackendServerRecord = Awaited<ReturnType<typeof prism.backendServer.findMany>>[number] & Record<string, any>;
-
-async function getParticipantHeaderName() {
-  const setting = await prism.systemSetting.findUnique({ where: { key: 'participant_token_header' } });
-  return setting?.value || DEFAULT_HEADER;
-}
-
-async function ensureParticipantToken(userId: number) {
-  const existing = await prism.participantToken.findUnique({ where: { userId } });
-  if (existing && existing.expiresAt > new Date()) return existing;
-
-  const ttlSetting = await prism.systemSetting.findUnique({ where: { key: 'participant_token_ttl_minutes' } });
-  const ttl = parseInt(ttlSetting?.value ?? '', 10);
-  const ttlMinutes = Number.isFinite(ttl) && ttl > 0 ? ttl : DEFAULT_TTL_MINUTES;
-  const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-
-  return prism.participantToken.upsert({
-    where: { userId },
-    create: { id: crypto.randomUUID(), userId, token, expiresAt },
-    update: { token, expiresAt },
-  });
-}
 
 function maskToken(token: string | null) {
   if (!token) return null;
@@ -68,17 +43,17 @@ function buildTokenRequestCurl(headerName: string, authUrl: string) {
   ${authUrl}`;
 }
 
-function buildResourceCurl(headerName: string, resourceBaseUrl: string) {
+function buildResourceCurl(headerName: string, resourceBaseUrl: string, examplePath = '/') {
   return `curl -i \\
   -H "Authorization: Bearer <access_token>" \\
   -H "${headerName}: <participant_token>" \\
-  ${joinUrl(resourceBaseUrl, '/')}`;
+  ${joinUrl(resourceBaseUrl, examplePath)}`;
 }
 
-function buildDirectCurl(headerName: string, publicBaseUrl: string) {
+function buildDirectCurl(headerName: string, publicBaseUrl: string, examplePath = '/') {
   return `curl -i \\
   -H "${headerName}: <participant_token>" \\
-  ${joinUrl(publicBaseUrl, '/')}`;
+  ${joinUrl(publicBaseUrl, examplePath)}`;
 }
 
 function buildGuideItem(
@@ -114,13 +89,16 @@ function buildGuideItem(
 
 export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/integration-guide', { preHandler: [authenticate] }, async (request, reply) => {
+    if (typeof request.user.institutionId !== 'number') {
+      return reply.status(401).send({ error: 'Access token is missing institution. Please sign in again.' });
+    }
     const [servers, headerName, participantToken] = await Promise.all([
       prism.backendServer.findMany({
         where: { isActive: true },
         orderBy: { name: 'asc' },
       }),
       getParticipantHeaderName(),
-      ensureParticipantToken(request.user.sub),
+      ensureParticipantToken(request.user.sub, request.user.institutionId),
     ]);
 
     const byId = new Map(servers.map((server) => [server.id, server as BackendServerRecord]));
@@ -150,6 +128,9 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get('/integration-guide/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    if (typeof request.user.institutionId !== 'number') {
+      return reply.status(401).send({ error: 'Access token is missing institution. Please sign in again.' });
+    }
     const { id } = request.params as { id: string };
     const [servers, headerName, participantToken] = await Promise.all([
       prism.backendServer.findMany({
@@ -157,7 +138,7 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
         orderBy: { name: 'asc' },
       }),
       getParticipantHeaderName(),
-      ensureParticipantToken(request.user.sub),
+      ensureParticipantToken(request.user.sub, request.user.institutionId),
     ]);
 
     const byId = new Map(servers.map((server) => [server.id, server as BackendServerRecord]));
@@ -167,8 +148,10 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const authServer = server.oauthAuthServerId ? byId.get(server.oauthAuthServerId as string) ?? null : null;
-    const origin = `${request.protocol}://${request.headers.host}`;
+    const proto = (request.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0].trim() ?? request.protocol;
+    const origin = `${proto}://${request.headers.host}`;
     const publicBaseUrl = userFacingBaseUrl(server);
+    const examplePath = (server.heartbeatPath as string | null) || '/';
     const item = buildGuideItem(server, authServer);
 
     const steps = authServer
@@ -203,12 +186,12 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
           title: `Call ${server.name}`,
           description: 'Use the access token on the user-facing resource URL and include the participant token again.',
           method: 'GET',
-          url: joinUrl(publicBaseUrl, '/'),
+          url: joinUrl(publicBaseUrl, examplePath),
           headers: [
             { name: 'Authorization', value: 'Bearer <access_token>' },
             { name: headerName, value: '<participant_token>' },
           ],
-          curl: buildResourceCurl(headerName, publicBaseUrl),
+          curl: buildResourceCurl(headerName, publicBaseUrl, examplePath),
           kind: 'resource-call',
         },
       ]
@@ -218,9 +201,9 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
           title: `Call ${server.name}`,
           description: 'Use the public access URL directly and include the participant token header.',
           method: 'GET',
-          url: joinUrl(publicBaseUrl, '/'),
+          url: joinUrl(publicBaseUrl, examplePath),
           headers: [{ name: headerName, value: '<participant_token>' }],
-          curl: buildDirectCurl(headerName, publicBaseUrl),
+          curl: buildDirectCurl(headerName, publicBaseUrl, examplePath),
           kind: 'resource-call',
         },
       ];

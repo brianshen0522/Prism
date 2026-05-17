@@ -9,19 +9,33 @@ datasource db {
 }
 
 model GazelleUser {
-  id           Int               @id
-  username     String            @unique
-  password     String
-  email        String?
-  firstname    String?
-  lastname     String?
-  activated    Boolean           @default(false)
-  blocked      Boolean           @default(false)
-  lastLogin    DateTime?         @map("last_login")
-  creationDate DateTime?         @map("creation_date")
-  roles        GazelleUserRole[]
+  id            Int                 @id
+  username      String              @unique
+  password      String
+  email         String?
+  firstname     String?
+  lastname      String?
+  institutionId Int?                @map("institution_id")
+  activated     Boolean?            @default(false)
+  blocked       Boolean?            @default(false)
+  lastLogin     DateTime?           @map("last_login")
+  creationDate  DateTime?           @map("creation_date")
+  institution   GazelleInstitution? @relation(fields: [institutionId], references: [id])
+  roles         GazelleUserRole[]
 
   @@map("usr_users")
+}
+
+model GazelleInstitution {
+  id        Int           @id
+  name      String
+  keyword   String?
+  activated Boolean?      @default(false)
+  url       String?
+  note      String?
+  users     GazelleUser[]
+
+  @@map("usr_institution")
 }
 
 model GazelleUserRole {

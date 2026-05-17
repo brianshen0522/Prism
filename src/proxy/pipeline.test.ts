@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import http from 'http';
 import zlib from 'zlib';
+import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'net';
 import type { BackendServer } from '@prisma/client';
 
@@ -11,7 +12,7 @@ vi.mock('../db/prism', () => ({
       update: vi.fn(),
     },
     participantToken: {
-      findFirst: vi.fn(),
+      findUnique: vi.fn(),
     },
     systemSetting: {
       findUnique: vi.fn(),
@@ -27,9 +28,29 @@ vi.mock('../ws/manager', () => ({
   },
 }));
 
+vi.mock('../oauth/reconcile', () => ({
+  enqueueOAuthReconcile: vi.fn(),
+}));
+
 import { handleRequest, applyBodyLimit, identifyUser } from './pipeline';
 import { signAccessToken } from '../lib/jwt';
+import { generateParticipantJwt } from '../lib/participant-token';
 import { prism } from '../db/prism';
+
+const INSTITUTION_ID = 456;
+const INSTITUTION_NAME = 'Taiwan Hospital';
+
+function participantJwt(userId = 99, institutionId = INSTITUTION_ID) {
+  return generateParticipantJwt(userId, institutionId, 5).token;
+}
+
+function expiredParticipantJwt(userId = 99, institutionId = INSTITUTION_ID) {
+  return jwt.sign(
+    { userId, institutionId },
+    process.env.PARTICIPANT_TOKEN_SECRET!,
+    { expiresIn: -1 },
+  );
+}
 
 // ─── Shared mock server (acts as the proxy target) ────────────────────────────
 
@@ -99,7 +120,7 @@ beforeEach(() => {
   lastTargetRequest = null;
   vi.mocked(prism.connection.create).mockResolvedValue(MOCK_CONNECTION as any);
   vi.mocked(prism.connection.update).mockResolvedValue({} as any);
-  vi.mocked(prism.participantToken.findFirst).mockResolvedValue(null);
+  vi.mocked(prism.participantToken.findUnique).mockResolvedValue(null);
   vi.mocked(prism.systemSetting.findUnique).mockResolvedValue(null);
 });
 
@@ -187,47 +208,104 @@ describe('applyBodyLimit', () => {
 
 describe('identifyUser', () => {
   it('returns user_id from a valid JWT', async () => {
-    const token = signAccessToken({ sub: 42, username: 'brian9429', role: 'admin' });
+    const token = signAccessToken({
+      sub: 42,
+      username: 'brian9429',
+      role: 'admin',
+      institutionId: INSTITUTION_ID,
+      institutionName: INSTITUTION_NAME,
+    });
     const result = await identifyUser({ authorization: `Bearer ${token}` });
     expect(result.userId).toBe(42);
+    expect(result.institutionId).toBe(INSTITUTION_ID);
     expect(result.username).toBe('brian9429');
+    expect(result.participantTokenValid).toBeNull();
+    expect(result.participantTokenInvalidReason).toBeNull();
   });
 
   it('returns null for an invalid JWT', async () => {
     const result = await identifyUser({ authorization: 'Bearer invalid.jwt.token' });
     expect(result.userId).toBeNull();
+    expect(result.institutionId).toBeNull();
     expect(result.username).toBeNull();
+    expect(result.participantTokenValid).toBeNull();
+    expect(result.participantTokenInvalidReason).toBeNull();
   });
 
   it('returns null for a missing Authorization header', async () => {
     const result = await identifyUser({});
     expect(result.userId).toBeNull();
+    expect(result.institutionId).toBeNull();
     expect(result.username).toBeNull();
+    expect(result.participantTokenValid).toBeNull();
+    expect(result.participantTokenInvalidReason).toBeNull();
   });
 
-  it('returns user_id from a valid participant token', async () => {
-    vi.mocked(prism.participantToken.findFirst).mockResolvedValue({
+  it('returns user and institution from a valid participant token', async () => {
+    const token = participantJwt();
+    vi.mocked(prism.participantToken.findUnique).mockResolvedValue({
       id: 'pt-uuid-1',
       userId: 99,
-      token: 'abc123',
+      institutionId: INSTITUTION_ID,
+      token,
       expiresAt: new Date(Date.now() + 60_000),
       createdAt: new Date(),
     } as any);
 
-    const result = await identifyUser({ 'x-participant-token': 'abc123' });
+    const result = await identifyUser({ 'x-participant-token': token });
     expect(result.userId).toBe(99);
+    expect(result.institutionId).toBe(INSTITUTION_ID);
     expect(result.username).toBeNull();
+    expect(result.participantTokenValid).toBe(true);
+    expect(result.participantTokenInvalidReason).toBeNull();
+    expect(prism.participantToken.findUnique).toHaveBeenCalledWith({ where: { userId: 99 } });
   });
 
-  it('returns null for an unknown participant token', async () => {
-    vi.mocked(prism.participantToken.findFirst).mockResolvedValue(null);
+  it('marks a signed but replaced participant token as revoked', async () => {
+    const token = participantJwt();
+    vi.mocked(prism.participantToken.findUnique).mockResolvedValue({
+      id: 'pt-uuid-1',
+      userId: 99,
+      institutionId: INSTITUTION_ID,
+      token: 'current-token',
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+    } as any);
+
+    const result = await identifyUser({ 'x-participant-token': token });
+    expect(result.userId).toBe(99);
+    expect(result.institutionId).toBe(INSTITUTION_ID);
+    expect(result.participantTokenValid).toBe(false);
+    expect(result.participantTokenInvalidReason).toBe('revoked');
+  });
+
+  it('marks an expired participant token while preserving attribution claims', async () => {
+    const token = expiredParticipantJwt();
+    const result = await identifyUser({ 'x-participant-token': token });
+    expect(result.userId).toBe(99);
+    expect(result.institutionId).toBe(INSTITUTION_ID);
+    expect(result.participantTokenValid).toBe(false);
+    expect(result.participantTokenInvalidReason).toBe('expired');
+    expect(prism.participantToken.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('marks a forged participant token invalid without attribution', async () => {
     const result = await identifyUser({ 'x-participant-token': 'unknown' });
     expect(result.userId).toBeNull();
+    expect(result.institutionId).toBeNull();
+    expect(result.participantTokenValid).toBe(false);
+    expect(result.participantTokenInvalidReason).toBeNull();
   });
 
   it('prefers JWT over participant token when both are present', async () => {
-    const token = signAccessToken({ sub: 10, username: 'admin', role: 'admin' });
-    vi.mocked(prism.participantToken.findFirst).mockResolvedValue({ userId: 20 } as any);
+    const token = signAccessToken({
+      sub: 10,
+      username: 'admin',
+      role: 'admin',
+      institutionId: INSTITUTION_ID,
+      institutionName: INSTITUTION_NAME,
+    });
+    vi.mocked(prism.participantToken.findUnique).mockResolvedValue({ userId: 20 } as any);
 
     const result = await identifyUser({
       authorization: `Bearer ${token}`,
@@ -235,8 +313,9 @@ describe('identifyUser', () => {
     });
 
     expect(result.userId).toBe(10); // JWT wins
+    expect(result.institutionId).toBe(INSTITUTION_ID);
     expect(result.username).toBe('admin');
-    expect(prism.participantToken.findFirst).not.toHaveBeenCalled();
+    expect(prism.participantToken.findUnique).not.toHaveBeenCalled();
   });
 });
 
@@ -257,6 +336,9 @@ describe('handleRequest (pipeline)', () => {
           reqUrl: '/fhir/Patient',
           status: 'pending',
           userId: null, // anonymous
+          institutionId: null,
+          participantTokenValid: null,
+          participantTokenInvalidReason: null,
           serverId: 'test-server-id',
         }),
       }),
@@ -300,7 +382,13 @@ describe('handleRequest (pipeline)', () => {
   });
 
   it('records connection with userId from JWT', async () => {
-    const token = signAccessToken({ sub: 7, username: 'brian9429', role: 'user' });
+    const token = signAccessToken({
+      sub: 7,
+      username: 'brian9429',
+      role: 'user',
+      institutionId: INSTITUTION_ID,
+      institutionName: INSTITUTION_NAME,
+    });
 
     await request({
       headers: { authorization: `Bearer ${token}` },
@@ -308,21 +396,56 @@ describe('handleRequest (pipeline)', () => {
 
     expect(prism.connection.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ userId: 7 }),
+        data: expect.objectContaining({
+          userId: 7,
+          institutionId: INSTITUTION_ID,
+          participantTokenValid: null,
+          participantTokenInvalidReason: null,
+        }),
       }),
     );
   });
 
-  it('records connection with userId from participant token', async () => {
-    vi.mocked(prism.participantToken.findFirst).mockResolvedValue({
-      id: 'pt-1', userId: 55, token: 'tok-abc', expiresAt: new Date(Date.now() + 60_000), createdAt: new Date(),
+  it('records connection attribution from a valid participant token', async () => {
+    const token = participantJwt(55);
+    vi.mocked(prism.participantToken.findUnique).mockResolvedValue({
+      id: 'pt-1',
+      userId: 55,
+      institutionId: INSTITUTION_ID,
+      token,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
     } as any);
 
-    await request({ headers: { 'x-participant-token': 'tok-abc' } });
+    await request({ headers: { 'x-participant-token': token } });
 
     expect(prism.connection.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ userId: 55 }),
+        data: expect.objectContaining({
+          userId: 55,
+          institutionId: INSTITUTION_ID,
+          participantTokenPresent: true,
+          participantTokenValid: true,
+          participantTokenInvalidReason: null,
+        }),
+      }),
+    );
+  });
+
+  it('records expired participant token attribution as invalid', async () => {
+    const token = expiredParticipantJwt(55);
+
+    await request({ headers: { 'x-participant-token': token } });
+
+    expect(prism.connection.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: 55,
+          institutionId: INSTITUTION_ID,
+          participantTokenPresent: true,
+          participantTokenValid: false,
+          participantTokenInvalidReason: 'expired',
+        }),
       }),
     );
   });

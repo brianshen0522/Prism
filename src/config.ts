@@ -25,6 +25,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('8h'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  PARTICIPANT_TOKEN_SECRET: z.string().min(32, 'PARTICIPANT_TOKEN_SECRET must be at least 32 characters'),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -79,6 +80,7 @@ export const config = {
     refreshSecret: env.JWT_REFRESH_SECRET,
     refreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
   },
+  participantTokenSecret: env.PARTICIPANT_TOKEN_SECRET,
 } as const;
 
 // Set database URLs for Prisma — must happen before Prisma clients are instantiated

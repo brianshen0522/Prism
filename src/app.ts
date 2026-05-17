@@ -25,25 +25,34 @@ export async function buildApp() {
 
   await app.register(cors, { origin: true });
 
-  app.get('/api/health', async () => ({
+  const bp = config.app.basePath;
+  const api = `${bp}/api`;
+
+  app.get(`${api}/health`, async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
   }));
 
-  await app.register(authRoutes, { prefix: '/api/auth' });
-  await app.register(serverRoutes, { prefix: '/api' });
-  await app.register(connectionRoutes, { prefix: '/api' });
-  await app.register(tokenRoutes, { prefix: '/api' });
-  await app.register(dashboardRoutes, { prefix: '/api' });
-  await app.register(settingsRoutes, { prefix: '/api' });
-  await app.register(adminUsersRoutes, { prefix: '/api' });
-  await app.register(oauthRoutes, { prefix: '/api' });
-  await app.register(integrationGuideRoutes, { prefix: '/api' });
-  await app.register(publicRoutes, { prefix: '/api' });
+  await app.register(authRoutes, { prefix: `${api}/auth` });
+  await app.register(serverRoutes, { prefix: api });
+  await app.register(connectionRoutes, { prefix: api });
+  await app.register(tokenRoutes, { prefix: api });
+  await app.register(dashboardRoutes, { prefix: api });
+  await app.register(settingsRoutes, { prefix: api });
+  await app.register(adminUsersRoutes, { prefix: api });
+  await app.register(oauthRoutes, { prefix: api });
+  await app.register(integrationGuideRoutes, { prefix: api });
+  await app.register(publicRoutes, { prefix: api });
+
+  // Redirect bare "/" to the base path when BASE_PATH is set
+  if (bp) {
+    app.get('/', async (_req, reply) => reply.redirect(`${bp}/`, 302));
+  }
 
   // Serve the React frontend (production build)
   await app.register(staticFiles, {
     root: path.join(__dirname, 'public'),
+    prefix: bp ? `${bp}/` : '/',
     wildcard: false,
   });
 

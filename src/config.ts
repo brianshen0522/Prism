@@ -17,6 +17,11 @@ const envSchema = z.object({
   // App
   APP_PORT: z.string().default('3000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  BASE_PATH: z.string().default('').transform((v) => {
+    const s = v.trim().replace(/\/+$/, '');
+    if (!s) return '';
+    return s.startsWith('/') ? s : `/${s}`;
+  }),
   // Proxy port range
   PROXY_PORT_START: z.string().default('7001'),
   PROXY_PORT_END: z.string().default('7100'),
@@ -69,6 +74,7 @@ export const config = {
   app: {
     port: parseInt(env.APP_PORT, 10),
     env: env.NODE_ENV,
+    basePath: env.BASE_PATH,
   },
   proxy: {
     portStart: parseInt(env.PROXY_PORT_START, 10),

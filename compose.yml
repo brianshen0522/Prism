@@ -1,6 +1,9 @@
 services:
   prism-app:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_PATH: ${BASE_PATH:-}
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"

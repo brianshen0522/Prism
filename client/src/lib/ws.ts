@@ -30,7 +30,7 @@ export function useWebSocket({ channels, onMessage, enabled = true }: UseWebSock
     const token = useAuthStore.getState().accessToken;
     if (!token || !mountedRef.current) return;
 
-    const ws = new WebSocket(`/ws?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(`${import.meta.env.BASE_URL}ws?token=${encodeURIComponent(token)}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

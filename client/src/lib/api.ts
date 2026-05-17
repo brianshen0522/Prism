@@ -1,6 +1,6 @@
 import { useAuthStore, REFRESH_TOKEN_KEY } from '../store/auth';
 
-const BASE = '/api';
+const BASE = `${import.meta.env.BASE_URL}api`;
 
 // Decode a JWT payload without verification (client-side display only)
 function decodeJwt(token: string) {

@@ -6,6 +6,8 @@ For external integrations, the preferred pattern is to authenticate each request
 
 Participant tokens are signed JWTs issued for one user and that user's current institution. The signing secret is `PARTICIPANT_TOKEN_SECRET`, which must be different from the regular access-token secrets.
 
+The token TTL is controlled by the `participant_token_ttl_minutes` system setting (configurable in the Settings page). Accepted range is 1 to 43200 minutes (30 days). The default is 5 minutes.
+
 ## Security Notes
 
 - Use the username/password APIs only over HTTPS.

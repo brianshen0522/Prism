@@ -2,14 +2,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { verifyAccessToken } from '../lib/jwt';
 import { wsManager } from './manager';
+import { config } from '../config';
 
 export function setupWebSocket(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req, socket, head) => {
-    // Only handle /ws upgrades
+    // Only handle /ws upgrades (respects BASE_PATH)
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    if (url.pathname !== '/ws') {
+    if (url.pathname !== `${config.app.basePath}/ws`) {
       socket.destroy();
       return;
     }

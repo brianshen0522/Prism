@@ -48,8 +48,49 @@ Core variables:
 - `JWT_SECRET`, `JWT_REFRESH_SECRET`, `PARTICIPANT_TOKEN_SECRET`
 - `APP_PORT`
 - `PROXY_PORT_START`, `PROXY_PORT_END`
+- `BASE_PATH` _(optional)_ — sub-path prefix; see below
 
 Keep JWT and participant token secrets long, random, and distinct. Treat Gazelle as read-only.
+
+## Sub-path Mounting (BASE_PATH)
+
+Set `BASE_PATH` when Prism is mounted at a URL prefix behind a reverse proxy:
+
+```bash
+# .env
+BASE_PATH=/prism
+```
+
+`BASE_PATH` is baked into the Vite frontend bundle at build time, so **a Docker rebuild is required whenever the value changes**:
+
+```bash
+docker compose build prism-app && docker compose up -d prism-app
+```
+
+After setting `BASE_PATH=/prism`, all routes shift accordingly:
+
+| Item | Without BASE_PATH | With BASE_PATH=/prism |
+|---|---|---|
+| Web app | `https://example.com/` | `https://example.com/prism/` |
+| API | `/api/connections` | `/prism/api/connections` |
+| WebSocket | `/ws` | `/prism/ws` |
+
+Example Nginx location for sub-path mounting:
+
+```nginx
+location /prism/ {
+    proxy_pass          http://127.0.0.1:3000/prism/;
+    proxy_set_header    Host              $host;
+    proxy_set_header    X-Forwarded-Proto $scheme;
+    proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
+
+    proxy_http_version  1.1;
+    proxy_set_header    Upgrade    $http_upgrade;
+    proxy_set_header    Connection "Upgrade";
+}
+```
+
+Leaving `BASE_PATH` unset keeps the app mounted at `/` with no change to existing behaviour.
 
 ## Database Updates
 

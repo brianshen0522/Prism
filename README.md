@@ -43,12 +43,12 @@ Participant / Client
 
                Prism Application Layer
 ┌─────────────────────────────────────────────────────────────┐
-│ Fastify API                                                │
-│ React frontend                                             │
-│ WebSocket live updates                                     │
-│ OAuth extraction + reconcile                               │
-│ Server health and heartbeat workers                        │
-│ Integration Guide generation                               │
+│ Fastify API                                                 │
+│ React frontend                                              │
+│ WebSocket live updates                                      │
+│ OAuth extraction + reconcile                                │
+│ Server health and heartbeat workers                         │
+│ Integration Guide generation                                │
 └─────────────────────────────────────────────────────────────┘
                             |
                             v
@@ -68,12 +68,7 @@ Client -> Prism proxy -> target backend
                  +-> make traffic searchable in UI
 ```
 
-This workflow powers:
-
-- `Dashboard`
-- `Global Traffic`
-- `My Connections`
-- connection inspect sidebars
+This workflow powers the Dashboard, Global Traffic, and connection inspect views.
 
 ### 2. OAuth Pipeline Correlation
 
@@ -90,11 +85,7 @@ and computes:
 - refresh-token lineage
 ```
 
-This workflow powers:
-
-- `OAuth Pipelines` mode in traffic pages
-- OAuth detail flow maps
-- refresh-chain tracing
+This workflow powers the OAuth Pipelines mode in traffic pages and OAuth detail flow maps.
 
 ### 3. Server Health and Proxy Heartbeat
 
@@ -108,11 +99,7 @@ Prism -> user-facing URL through proxy path
       -> verify proxy path is working
 ```
 
-This workflow powers:
-
-- backend status
-- proxy status
-- heartbeat timelines in `Servers`
+This workflow powers backend status, proxy status, and heartbeat timelines in `Servers`.
 
 ### 4. Generated Integration Guidance
 
@@ -126,29 +113,77 @@ Server configuration
 Prism generates:
 - service catalog
 - per-service detail guide
-- OAuth walkthrough
-- curl examples
+- OAuth walkthrough with https-correct curl examples
 ```
 
-This workflow powers:
-
-- `Integration Guide`
-- participant onboarding after login
+This workflow powers `Integration Guide` and participant onboarding after login.
 
 ## Main Screens
 
-- `Integration Guide`: catalog of services plus a detail page for each direct server or OAuth server pair
-- `Dashboard`: recent raw connections, recent OAuth pipelines, and summary metrics
-- `Global Traffic`: raw traffic and OAuth pipeline views across the whole system
-- `My Connections`: the same two modes, scoped to the current user
-- `Servers`: server configuration, target testing, heartbeat testing, timelines, and status lights
-- `Participant Token`: current token, renewal actions, validation APIs, and curl examples
+| Screen | Who can use it | Description |
+|---|---|---|
+| `Integration Guide` | all roles | Catalog of active servers with a detail page per server showing the full OAuth walkthrough or direct-access curl steps |
+| `Dashboard` | admin, monitor | Recent connections, recent OAuth pipelines, summary metrics, and a traffic chart |
+| `Global Traffic` | admin, monitor | Raw traffic and OAuth pipeline views across all servers; supports filtering by server, institution, user, method, status code, and text |
+| `My Traffic` | user, oauth2 | The same raw + OAuth views scoped to the logged-in user's institution; user filter is also available |
+| `Servers` | admin, monitor | Server configuration, target testing, heartbeat testing, connection timelines, and per-server status lights |
+| `Settings` | admin | System-wide settings: participant token header name, token TTL, body size limits, timeouts, and dashboard windows |
+| `Participant Token` | all roles | Current JWT token, renewal, validation APIs, and curl examples pre-filled with the current origin |
+| `Users` | admin | Overview of active Gazelle users grouped by institution |
+| `OAuth Pipelines` | admin, monitor, oauth2 | Cross-institution OAuth pipeline view with full legal / success / refresh-chain detail |
+
+## Traffic Filters
+
+The raw traffic and OAuth pipeline views expose filters that adapt to the viewer's role:
+
+- **admin / monitor**: institution filter plus a user filter that cascades when an institution is selected
+- **user / oauth2**: user filter only, automatically scoped to the viewer's own institution by the backend
 
 ## Roles
 
-- `admin`: full configuration, traffic visibility, and destructive actions
-- `monitor`: global observability views without admin-only configuration powers
-- `user`: personal traffic plus generated integration guidance and token tools
+| Role | Access |
+|---|---|
+| `admin` | Full configuration, all traffic, all OAuth pipelines, destructive actions |
+| `monitor` | Global observability (same traffic and pipeline visibility as admin), no configuration |
+| `oauth2` | All OAuth pipelines; no traffic, no configuration |
+| `user` | Own institution's traffic, own OAuth pipelines, integration guide, participant token |
+
+After login, admin, monitor, and oauth2 users are redirected to the Dashboard. Users are redirected to the Integration Guide.
+
+## Participant Tokens
+
+Every proxied request is expected to carry a rotating JWT in a configurable header (default `X-Participant-Token`). Prism uses this header to attribute traffic to a participant without requiring them to use their primary login credentials for every call.
+
+- Tokens are JWT-signed with a separate secret (`PARTICIPANT_TOKEN_SECRET`)
+- TTL is configurable via the Settings page (`participant_token_ttl_minutes`, 1 to 43200 minutes / 30 days)
+- Each user has one active token at a time; renewing a token immediately revokes the previous one
+- The `POST /api/token/current` and `POST /api/token/renew` endpoints allow programmatic token retrieval using username and password
+
+See [Participant Tokens](docs/participant-tokens.md) for endpoint reference and curl examples.
+
+## Configuration
+
+Key environment variables (see `.env.example` for full reference):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PROXY_DB_PASS` | — | Required. Prism PostgreSQL password |
+| `GAZELLE_DB_HOST` | — | Required. Gazelle read-only DB host |
+| `JWT_SECRET` | — | Required. At least 32 random characters |
+| `JWT_REFRESH_SECRET` | — | Required. Different from JWT_SECRET |
+| `PARTICIPANT_TOKEN_SECRET` | — | Required. Different from both JWT secrets |
+| `APP_PORT` | `3000` | Port for the Prism web app |
+| `PROXY_PORT_START` / `PROXY_PORT_END` | `7001` / `7100` | Port range for proxy listeners |
+| `BASE_PATH` | _(empty)_ | Sub-path prefix for reverse-proxy mounting (e.g. `/prism`) |
+
+`BASE_PATH` is baked into the frontend bundle at Docker build time. Changing it requires a rebuild:
+
+```bash
+# .env
+BASE_PATH=/prism
+
+docker compose build prism-app && docker compose up -d prism-app
+```
 
 ## Repository Layout
 
@@ -157,6 +192,9 @@ This workflow powers:
 - `prisma/`: Prism database schema
 - `prisma-gazelle/`: Gazelle read-only schema
 - `simulators/oauth-simulator/`: local authentication/resource simulator for testing OAuth flows
+- `simulators/oauth-stress/`: stress-test driver for load-testing OAuth pipelines
+- `docs/`: architecture, deployment, database, and feature guides
+- `nginx/`: example Nginx TLS termination config
 
 ## Documentation
 
@@ -169,5 +207,3 @@ This workflow powers:
 - [Integration Guide](docs/integration-guide.md)
 - [OAuth Simulator](simulators/oauth-simulator/README.md)
 - [Contributor Guide](AGENTS.md)
-
-For setup, commands, schema details, and simulator scenarios, use the linked documents above.

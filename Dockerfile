@@ -13,9 +13,10 @@ RUN npm ci
 COPY client/package*.json ./client/
 RUN cd client && npm ci
 
-# Build everything
+# Build everything (BASE_PATH bakes the sub-path prefix into the frontend bundle)
+ARG BASE_PATH=""
 COPY . .
-RUN npm run build
+RUN VITE_BASE_PATH=${BASE_PATH} npm run build
 
 FROM node:20-alpine
 WORKDIR /app

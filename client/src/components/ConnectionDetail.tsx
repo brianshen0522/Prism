@@ -295,7 +295,7 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
   const isValidJson = !!body && (() => { try { JSON.parse(body); return true; } catch { return false; } })();
   const isValidHtml = !!body && /<[a-z][\s\S]*>/i.test(body);
   const defaultMode = body ? detectMode(body, contentType) : 'raw';
-  const [mode, setMode] = useState<ViewMode>(defaultMode);
+  const [mode, setMode] = useState<ViewMode>(defaultMode === 'json' && !isValidJson ? 'raw' : defaultMode);
 
   if (!body) return <p className="text-xs text-gray-400">No body</p>;
 
@@ -335,7 +335,7 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
           </pre>
         </div>
       )}
-      {mode === 'json' && <JsonTree body={body} />}
+      {mode === 'json' && isValidJson && <JsonTree body={body} />}
       {mode === 'html' && (
         <iframe srcDoc={body} sandbox="" className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white" style={{ height: '24rem' }} title="HTML preview" />
       )}

@@ -234,6 +234,7 @@ function forwardRequest(
   server: BackendServer,
   req: http.IncomingMessage,
   bodyBuffer: Buffer,
+  participantHeaderName: string,
 ): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const targetUrl = new URL(server.targetUrl);
@@ -241,6 +242,7 @@ function forwardRequest(
     const transport = isHttps ? https : http;
 
     const headers = filterHeaders(req.headers, targetUrl.host);
+    delete headers[participantHeaderName];
 
     // Set correct content-length for the buffered body
     if (bodyBuffer.length > 0) {
@@ -340,10 +342,11 @@ export async function handleRequest(
     reqTimestamp,
   });
 
-  // Step 5 — Forward to target
+  // Step 5 — Forward to target (strip participant token header before sending)
+  const participantHeaderName = await getParticipantHeader();
   let proxyRes: http.IncomingMessage;
   try {
-    proxyRes = await forwardRequest(server, req, reqBodyBuffer);
+    proxyRes = await forwardRequest(server, req, reqBodyBuffer, participantHeaderName);
   } catch (err) {
     await prism.connection.update({
       where: { id: connection.id },

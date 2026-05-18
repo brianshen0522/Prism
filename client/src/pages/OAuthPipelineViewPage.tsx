@@ -104,7 +104,7 @@ export function OAuthPipelineViewPage() {
               }}
               getExternalHref={(id) => {
                 const token = idToToken[id];
-                return token ? `/view/c/${token}` : null;
+                return token ? `${import.meta.env.BASE_URL}view/c/${token}` : null;
               }}
             />
           </div>

@@ -185,7 +185,7 @@ export function TokenPage() {
   const isTokenStale = useAuthStore((state) => state.participantTokenStale);
   const clearTokenStale = useAuthStore((state) => state.clearParticipantTokenStale);
   const [regenDialogOpen, setRegenDialogOpen] = useState(false);
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const appBaseUrl = typeof window !== 'undefined' ? `${window.location.origin}${import.meta.env.BASE_URL}` : 'http://localhost:3000/';
   const curlUsername = user?.username ?? '<username>';
   const curlPassword = '<password>';
 
@@ -227,11 +227,11 @@ export function TokenPage() {
   const currentTokenCurl = `curl -X POST \\
   -H "Content-Type: application/json" \\
   -d '{"username":"${curlUsername}","password":"${curlPassword}"}' \\
-  ${currentOrigin}/api/token/current`;
+  ${appBaseUrl}api/token/current`;
   const renewTokenCurl = `curl -X POST \\
   -H "Content-Type: application/json" \\
   -d '{"username":"${curlUsername}","password":"${curlPassword}"}' \\
-  ${currentOrigin}/api/token/renew`;
+  ${appBaseUrl}api/token/renew`;
 
   const institutionShortName = user ? (user.institutionKeyword ?? user.institutionName) : 'your institution';
 
@@ -398,7 +398,7 @@ export function TokenPage() {
                       {currentTokenCurl}
                     </pre>
                   </div>
-                  <TryItPanel endpoint={`${currentOrigin}/api/token/current`} defaultUsername={curlUsername} />
+                  <TryItPanel endpoint={`${appBaseUrl}api/token/current`} defaultUsername={curlUsername} />
                 </div>
 
                 <div className="space-y-3">
@@ -420,7 +420,7 @@ export function TokenPage() {
                       {renewTokenCurl}
                     </pre>
                   </div>
-                  <TryItPanel endpoint={`${currentOrigin}/api/token/renew`} defaultUsername={curlUsername} />
+                  <TryItPanel endpoint={`${appBaseUrl}api/token/renew`} defaultUsername={curlUsername} />
                 </div>
               </CardContent>
             </Card>

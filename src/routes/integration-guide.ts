@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { prism } from '../db/prism';
 import { authenticate } from '../plugins/authenticate';
 import { ensureParticipantToken, getParticipantHeaderName } from '../lib/participant-token';
+import { config } from '../config';
 
 type BackendServerRecord = Awaited<ReturnType<typeof prism.backendServer.findMany>>[number] & Record<string, any>;
 
@@ -149,7 +150,7 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
 
     const authServer = server.oauthAuthServerId ? byId.get(server.oauthAuthServerId as string) ?? null : null;
     const proto = (request.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0].trim() ?? request.protocol;
-    const origin = `${proto}://${request.headers.host}`;
+    const appBase = `${proto}://${request.headers.host}${config.app.basePath}`;
     const publicBaseUrl = userFacingBaseUrl(server);
     const examplePath = (server.heartbeatPath as string | null) || '/';
     const item = buildGuideItem(server, authServer);
@@ -161,9 +162,9 @@ export const integrationGuideRoutes: FastifyPluginAsync = async (fastify) => {
           title: 'Get your participant token',
           description: 'Request your current participant token before starting the OAuth flow.',
           method: 'POST',
-          url: `${origin}/api/token/current`,
+          url: `${appBase}/api/token/current`,
           headers: [{ name: 'Content-Type', value: 'application/json' }],
-          curl: buildCurrentTokenCurl(origin, request.user.username),
+          curl: buildCurrentTokenCurl(appBase, request.user.username),
           kind: 'participant-token',
         },
         {

@@ -446,7 +446,7 @@ export function ConnectionDetailContent({ c }: { c: ConnectionDetail }) {
         </span>
         {c.share_token && (
           <CopyButton
-            value={`${window.location.origin}/view/c/${c.share_token}`}
+            value={`${window.location.origin}${import.meta.env.BASE_URL}view/c/${c.share_token}`}
             label="Copy share link"
             icon={<Link className="h-3 w-3" />}
           />

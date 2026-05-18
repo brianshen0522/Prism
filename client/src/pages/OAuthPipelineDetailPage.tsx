@@ -13,7 +13,7 @@ import { cn, fmtDate, httpStatusColor, methodColor, copyToClipboard } from '../l
 function ShareLinkButton({ shareToken }: { shareToken: string | null | undefined }) {
   const [copied, setCopied] = useState(false);
   if (!shareToken) return null;
-  const url = `${window.location.origin}/view/op/${shareToken}`;
+  const url = `${window.location.origin}${import.meta.env.BASE_URL}view/op/${shareToken}`;
   async function handle() {
     await copyToClipboard(url);
     setCopied(true);

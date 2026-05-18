@@ -21,7 +21,7 @@ export function ConnectionInspectPanel({
   getExternalHref?: (id: string) => string | null;
 }) {
   const fetch = fetchFn ?? fetchConnection;
-  const externalHref = id ? (getExternalHref ? getExternalHref(id) : `/connections/${id}`) : null;
+  const externalHref = id ? (getExternalHref ? getExternalHref(id) : `${import.meta.env.BASE_URL}connections/${id}`) : null;
 
   const { data: connection, isLoading } = useQuery({
     queryKey: ['connection', fetchFn ? 'public' : 'auth', id],

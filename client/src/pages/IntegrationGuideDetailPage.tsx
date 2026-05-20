@@ -1,10 +1,14 @@
+import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
   Copy,
+  ExternalLink,
   KeyRound,
+  Monitor,
   RefreshCw,
+  Server,
   ShieldCheck,
   Sparkles,
   Waypoints,
@@ -47,6 +51,7 @@ function StepCard({
   method,
   url,
   headers,
+  hint,
 }: {
   index: number;
   title: string;
@@ -54,6 +59,7 @@ function StepCard({
   method: string | null;
   url: string | null;
   headers: Array<{ name: string; value: string }>;
+  hint?: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:border-gray-700 dark:bg-gray-900/70">
@@ -69,6 +75,7 @@ function StepCard({
             ) : null}
           </div>
           <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">{description}</p>
+          {hint ? <div>{hint}</div> : null}
           {url ? (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-950/30">
               <p className="text-[11px] uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Endpoint</p>
@@ -200,17 +207,50 @@ export function IntegrationGuideDetailPage() {
             <CardHeader>
               <CardTitle>Service Overview</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-2">
-              <GuideInfoPanel title="Linked authentication server">
-                <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {data.item.authentication_server?.name ?? 'None'}
-                </p>
-                {data.item.authentication_server ? (
-                  <p className="mt-2 break-all font-mono text-xs text-gray-600 dark:text-gray-300">
-                    {data.item.authentication_server.token_endpoint ?? data.item.authentication_server.public_base_url}
-                  </p>
+            <CardContent className="space-y-5">
+              {/* Flow diagram */}
+              <div className={`flex flex-wrap items-center gap-2 rounded-2xl border p-4 ${guideMutedSurfaceClass}`}>
+                <div className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+                  <Monitor className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Your Client</span>
+                </div>
+                {isOAuth && data.item.authentication_server ? (
+                  <>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-blue-400" />
+                    <div className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 shadow-sm dark:bg-blue-900/30">
+                      <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      <div>
+                        <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">{data.item.authentication_server.name}</p>
+                        <p className="text-[10px] text-blue-500 dark:text-blue-400">auth server · get access token</p>
+                      </div>
+                    </div>
+                  </>
                 ) : null}
-              </GuideInfoPanel>
+                <ArrowRight className="h-4 w-4 shrink-0 text-blue-400" />
+                <div className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-2 shadow-sm dark:bg-green-900/30">
+                  <Server className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <div>
+                    <p className="text-xs font-semibold text-green-700 dark:text-green-300">{data.item.title}</p>
+                    <p className="text-[10px] text-green-500 dark:text-green-400">{isOAuth ? 'resource server · use access token' : 'direct access · participant token only'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Server panels */}
+              <div className="grid gap-4 lg:grid-cols-2">
+                {isOAuth && data.item.authentication_server ? (
+                  <GuideInfoPanel title="Authentication server">
+                    <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{data.item.authentication_server.name}</p>
+                    <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                      {data.item.authentication_server.token_endpoint ?? data.item.authentication_server.public_base_url}
+                    </p>
+                  </GuideInfoPanel>
+                ) : null}
+                <GuideInfoPanel title="Resource server">
+                  <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{data.item.title}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{data.item.public_base_url}</p>
+                </GuideInfoPanel>
+              </div>
             </CardContent>
           </Card>
 
@@ -239,6 +279,16 @@ export function IntegrationGuideDetailPage() {
                       method={step.method}
                       url={step.url}
                       headers={step.headers}
+                      hint={step.kind === 'participant-token' ? (
+                        <div className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          <span>You can also view and copy your token from the{' '}</span>
+                          <Link to="/token" className="font-semibold underline underline-offset-2 hover:text-blue-900 dark:hover:text-blue-100">
+                            My Token page
+                          </Link>
+                          <span>.</span>
+                        </div>
+                      ) : undefined}
                     />
                     {index < data.detail.steps.length - 1 ? (
                       <div className="pointer-events-none absolute left-2 top-[calc(100%+0.15rem)] flex h-5 w-8 items-center justify-center">

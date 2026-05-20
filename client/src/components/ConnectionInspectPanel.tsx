@@ -63,9 +63,10 @@ export function ConnectionInspectPanel({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-xs text-blue-600 hover:text-blue-700"
+                    className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                    title="Close"
                   >
-                    Clear
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>

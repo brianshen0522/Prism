@@ -6,19 +6,18 @@ services:
         BASE_PATH: ${BASE_PATH:-}
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-3000}:3000"
       - "${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}:${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}"
     env_file:
       - .env
     depends_on:
       postgres-prism:
         condition: service_healthy
+    networks:
+      - twcat26
 
   postgres-prism:
     image: postgres:16
     restart: unless-stopped
-    ports:
-      - "${PROXY_DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${PROXY_DB_NAME:-prism}
       POSTGRES_USER: ${PROXY_DB_USER:-prism}
@@ -31,6 +30,12 @@ services:
       timeout: 5s
       retries: 30
       start_period: 120s
+    networks:
+      - twcat26
 
 volumes:
   prism_pgdata:
+
+networks:
+  twcat26:
+    external: true

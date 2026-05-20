@@ -1141,7 +1141,7 @@ function ExportMenu() {
     setOpen(false);
     const { useAuthStore } = await import('../store/auth');
     const token = useAuthStore.getState().accessToken;
-    const path = '/api/admin/servers/export';
+    const path = `${import.meta.env.BASE_URL}api/admin/servers/export`;
     const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!res.ok) return;
     const blob = await res.blob();

@@ -577,7 +577,6 @@ export interface IntegrationGuideListResponse {
     description: string | null;
     role: 'generic' | 'resource';
     public_base_url: string;
-    target_url: string;
     auth_required: boolean;
     authentication_server: {
       id: string;

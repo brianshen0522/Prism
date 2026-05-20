@@ -72,7 +72,6 @@ function buildGuideItem(
     description: server.description ?? null,
     role: server.serverRole,
     public_base_url: publicBaseUrl,
-    target_url: server.targetUrl,
     auth_required: authRequired,
     authentication_server: authServer
       ? {

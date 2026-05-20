@@ -201,9 +201,6 @@ export function IntegrationGuideDetailPage() {
               <CardTitle>Service Overview</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-2">
-              <GuideInfoPanel title="Target URL">
-                <p className="break-all font-mono text-sm text-gray-900 dark:text-gray-100">{data.item.target_url}</p>
-              </GuideInfoPanel>
               <GuideInfoPanel title="Linked authentication server">
                 <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                   {data.item.authentication_server?.name ?? 'None'}

@@ -91,6 +91,7 @@ function importSignature(input: {
   heartbeatExpectedStatus: number;
   heartbeatTimeoutSeconds: number;
   heartbeatTlsVerify: boolean;
+  ignoredPaths: string[];
   authRef: string | null;
 }) {
   return JSON.stringify(input);
@@ -124,6 +125,7 @@ function fmt(s: BackendServer & Record<string, any>) {
     heartbeat_expected_status: s.heartbeatExpectedStatus ?? 200,
     heartbeat_timeout_seconds: s.heartbeatTimeoutSeconds ?? 10,
     heartbeat_tls_verify: s.heartbeatTlsVerify ?? true,
+    ignored_paths: (s as any).ignoredPaths ?? [],
     created_by: s.createdBy,
     created_at: s.createdAt,
     is_running: proxyManager.isRunning(s.id),
@@ -160,6 +162,7 @@ const createBody = z.object({
   heartbeat_expected_status: z.number().int().min(100).max(599).default(200),
   heartbeat_timeout_seconds: z.number().int().min(1).max(120).default(10),
   heartbeat_tls_verify: z.boolean().default(true),
+  ignored_paths: z.array(z.string().min(1)).default([]),
 });
 
 const updateBody = z.object({
@@ -186,6 +189,7 @@ const updateBody = z.object({
   heartbeat_expected_status: z.number().int().min(100).max(599).optional(),
   heartbeat_timeout_seconds: z.number().int().min(1).max(120).optional(),
   heartbeat_tls_verify: z.boolean().optional(),
+  ignored_paths: z.array(z.string().min(1)).optional(),
 });
 
 const targetTestBody = z.object({
@@ -239,6 +243,7 @@ const importSchema = z.object({
       heartbeat_expected_status: z.number().int().min(100).max(599).optional(),
       heartbeat_timeout_seconds: z.number().int().min(1).max(120).optional(),
       heartbeat_tls_verify: z.boolean().optional(),
+      ignored_paths: z.array(z.string().min(1)).optional(),
     }),
   ),
 });
@@ -304,6 +309,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           heartbeat_expected_status: s.heartbeatExpectedStatus ?? 200,
           heartbeat_timeout_seconds: s.heartbeatTimeoutSeconds ?? 10,
           heartbeat_tls_verify: s.heartbeatTlsVerify ?? true,
+          ignored_paths: (s as any).ignoredPaths ?? [],
         };
       }),
     });
@@ -367,6 +373,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         heartbeatExpectedStatus: s.heartbeat_expected_status ?? 200,
         heartbeatTimeoutSeconds: s.heartbeat_timeout_seconds ?? 10,
         heartbeatTlsVerify: s.heartbeat_tls_verify ?? true,
+        ignoredPaths: s.ignored_paths ?? [],
         authRef: authExportId,
       });
 
@@ -399,6 +406,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         heartbeatExpectedStatus: existing.heartbeatExpectedStatus ?? 200,
         heartbeatTimeoutSeconds: existing.heartbeatTimeoutSeconds ?? 10,
         heartbeatTlsVerify: existing.heartbeatTlsVerify ?? true,
+        ignoredPaths: (existing as any).ignoredPaths ?? [],
         authRef: existing.oauthAuthServerId ?? null,
       }) === normalizedSignature);
 
@@ -446,6 +454,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           heartbeatExpectedStatus: s.heartbeat_expected_status ?? 200,
           heartbeatTimeoutSeconds: s.heartbeat_timeout_seconds ?? 10,
           heartbeatTlsVerify: s.heartbeat_tls_verify ?? true,
+          ignoredPaths: s.ignored_paths ?? [],
           createdBy: request.user.sub,
         } as any,
       });
@@ -537,6 +546,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       heartbeat_expected_status,
       heartbeat_timeout_seconds,
       heartbeat_tls_verify,
+      ignored_paths,
     } = createData;
 
     let proxyPort: number;
@@ -580,6 +590,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         heartbeatExpectedStatus: heartbeat_expected_status ?? 200,
         heartbeatTimeoutSeconds: heartbeat_timeout_seconds ?? 10,
         heartbeatTlsVerify: heartbeat_tls_verify ?? true,
+        ignoredPaths: ignored_paths ?? [],
         createdBy: request.user.sub,
       } as any,
     });
@@ -658,6 +669,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         heartbeatExpectedStatus: d.heartbeat_expected_status,
         heartbeatTimeoutSeconds: d.heartbeat_timeout_seconds,
         heartbeatTlsVerify: d.heartbeat_tls_verify,
+        ignoredPaths: d.ignored_paths,
       } as any,
     });
 

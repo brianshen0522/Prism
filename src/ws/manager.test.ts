@@ -203,6 +203,7 @@ describe('emitConnectionNew', () => {
       reqMethod: 'GET',
       reqUrl: '/fhir/Patient',
       reqTimestamp: new Date(),
+      isPathIgnored: false,
     });
 
     const msgs = sent.map((s) => JSON.parse(s));
@@ -222,6 +223,7 @@ describe('emitConnectionNew', () => {
       reqMethod: 'POST',
       reqUrl: '/fhir/Patient',
       reqTimestamp: new Date(),
+      isPathIgnored: false,
     });
 
     const msgs = sent.map((s) => JSON.parse(s));
@@ -242,6 +244,7 @@ describe('emitConnectionNew', () => {
       reqMethod: 'GET',
       reqUrl: '/fhir/Observation',
       reqTimestamp: new Date(),
+      isPathIgnored: false,
     });
 
     const msgs = sent.map((s) => JSON.parse(s));

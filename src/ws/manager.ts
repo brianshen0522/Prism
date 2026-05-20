@@ -98,6 +98,7 @@ class WSManager {
     reqMethod: string;
     reqUrl: string;
     reqTimestamp: Date;
+    isPathIgnored: boolean;
   }): void {
     const msg: WSMessage = { type: 'connection:new', payload: data, ts: Date.now() };
     this.emit('traffic:all', msg);
@@ -117,6 +118,7 @@ class WSManager {
     serverId: string;
     resStatusCode: number;
     durationMs: number;
+    isPathIgnored: boolean;
   }): void {
     const msg: WSMessage = { type: 'connection:completed', payload: data, ts: Date.now() };
     this.emit('traffic:all', msg);
@@ -134,6 +136,7 @@ class WSManager {
     userId: number | null;
     institutionId?: number | null;
     serverId: string;
+    isPathIgnored: boolean;
   }): void {
     const msg: WSMessage = { type: 'connection:error', payload: data, ts: Date.now() };
     this.emit('traffic:all', msg);

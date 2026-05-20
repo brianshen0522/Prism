@@ -153,6 +153,7 @@ export interface ConnectionSummary {
   participant_token_valid: boolean | null;
   participant_token_invalid_reason: 'expired' | 'revoked' | null;
   is_system_heartbeat: boolean;
+  is_path_ignored: boolean;
 }
 
 export interface ConnectionDetail extends ConnectionSummary {
@@ -191,6 +192,7 @@ export function fetchConnections(params: {
   /** 'all' lets non-privileged users see all traffic (not just their own) */
   scope?: 'mine' | 'all';
   include_system_heartbeat?: boolean;
+  include_path_ignored?: boolean;
   sort?: string;
   order?: 'asc' | 'desc';
 }) {
@@ -212,6 +214,7 @@ export function fetchConnections(params: {
   if (params.sq_logic) q.set('sq_logic', params.sq_logic);
   if (params.scope) q.set('scope', params.scope);
   if (params.include_system_heartbeat) q.set('include_system_heartbeat', 'true');
+  if (params.include_path_ignored) q.set('include_path_ignored', 'true');
   if (params.sort) q.set('sort', params.sort);
   if (params.order) q.set('order', params.order);
   return json<ConnectionsPage>(`/connections?${q}`);
@@ -728,6 +731,7 @@ export interface AdminServer {
   heartbeat_expected_status: number;
   heartbeat_timeout_seconds: number;
   heartbeat_tls_verify: boolean;
+  ignored_paths: string[];
   created_by: number;
   created_at: string;
   is_running: boolean;
@@ -776,6 +780,7 @@ export interface CreateServerBody {
   heartbeat_expected_status?: number;
   heartbeat_timeout_seconds?: number;
   heartbeat_tls_verify?: boolean;
+  ignored_paths?: string[];
 }
 
 export interface UpdateServerBody {
@@ -802,6 +807,7 @@ export interface UpdateServerBody {
   heartbeat_expected_status?: number;
   heartbeat_timeout_seconds?: number;
   heartbeat_tls_verify?: boolean;
+  ignored_paths?: string[];
 }
 
 export function fetchAdminServers() {

@@ -447,6 +447,7 @@ function ServerForm({ initial, allServers, onSave, onClose, saving, error }: Ser
   const [targetTestTimeoutSeconds, setTargetTestTimeoutSeconds] = useState(String(initial?.target_test_timeout_seconds ?? 10));
   const [heartbeatExpanded, setHeartbeatExpanded] = useState(false);
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(initial?.heartbeat_enabled ?? false);
+  const [ignoredPathsText, setIgnoredPathsText] = useState((initial?.ignored_paths ?? []).join('\n'));
   const [userAccessProtocol, setUserAccessProtocol] = useState<BackendProtocol>(parsedUserAccess.protocol);
   const [userAccessHost, setUserAccessHost] = useState(parsedUserAccess.host);
   const [userAccessPort, setUserAccessPort] = useState(parsedUserAccess.port);
@@ -532,6 +533,7 @@ function ServerForm({ initial, allServers, onSave, onClose, saving, error }: Ser
       heartbeat_expected_status: parseInt(heartbeatExpectedStatus, 10) || 200,
       heartbeat_timeout_seconds: parseInt(heartbeatTimeoutSeconds, 10) || 10,
       heartbeat_tls_verify: userAccessProtocol === 'https' ? heartbeatTlsVerify : true,
+      ignored_paths: ignoredPathsText.split('\n').map((p) => p.trim()).filter((p) => p.length > 0),
     };
     if (!isEditing && proxyPort) body.proxy_port = parseInt(proxyPort, 10);
     if (isEditing) body.is_active = isActive;
@@ -1024,6 +1026,26 @@ function ServerForm({ initial, allServers, onSave, onClose, saving, error }: Ser
         )}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">Path Filters</h3>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Requests matching these paths are still captured but hidden from traffic by default.
+            One pattern per line.{' '}
+            <span className="font-medium">No wildcard</span> = exact match (<code className="font-mono">/health</code>).{' '}
+            <code className="font-mono">*</code> = wildcard (<code className="font-mono">/health*</code>, <code className="font-mono">/api/*/ping</code>).
+          </p>
+        </div>
+        <textarea
+          value={ignoredPathsText}
+          onChange={(e) => setIgnoredPathsText(e.target.value)}
+          placeholder={'/health\n/actuator*\n/api/*/status'}
+          rows={4}
+          className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-xs text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+          spellCheck={false}
+        />
       </div>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded px-3 py-2">{error}</p>}

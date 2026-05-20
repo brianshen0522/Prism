@@ -15,6 +15,7 @@ import {
 } from '../lib/participant-token';
 import { classifyOAuthConnection } from '../oauth/extract';
 import { enqueueOAuthReconcile } from '../oauth/reconcile';
+import { matchesIgnoredPath } from '../lib/path-filter';
 
 type ParticipantTokenInvalidReason = 'expired' | 'revoked' | null;
 
@@ -310,6 +311,7 @@ export async function handleRequest(
   );
 
   // Step 4 — Record request → DB (status: pending)
+  const isPathIgnored = matchesIgnoredPath(req.url ?? '/', (server as any).ignoredPaths ?? []);
   const connection = await prism.connection.create({
     data: {
       userId,
@@ -328,6 +330,7 @@ export async function handleRequest(
       institutionId,
       isSystemHeartbeat: !!heartbeatId,
       heartbeatId,
+      isPathIgnored,
     } as any,
   });
 
@@ -340,6 +343,7 @@ export async function handleRequest(
     reqMethod: req.method ?? 'UNKNOWN',
     reqUrl: req.url ?? '/',
     reqTimestamp,
+    isPathIgnored,
   });
 
   // Step 5 — Forward to target (strip participant token header before sending)
@@ -352,7 +356,7 @@ export async function handleRequest(
       where: { id: connection.id },
       data: { status: 'error' },
     });
-    wsManager.emitConnectionError({ id: connection.id, userId, institutionId, serverId: server.id });
+    wsManager.emitConnectionError({ id: connection.id, userId, institutionId, serverId: server.id, isPathIgnored });
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end(`Bad Gateway: ${(err as Error).message}`);
@@ -424,6 +428,7 @@ export async function handleRequest(
     serverId: server.id,
     resStatusCode: proxyRes.statusCode ?? 0,
     durationMs,
+    isPathIgnored,
   });
 
   // Step 9 — Return response to client

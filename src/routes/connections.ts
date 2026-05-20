@@ -136,6 +136,7 @@ function fmtConnection(
     participant_token_valid: c.participantTokenValid ?? null,
     participant_token_invalid_reason: c.participantTokenInvalidReason ?? null,
     is_system_heartbeat: c.isSystemHeartbeat ?? false,
+    is_path_ignored: (c as any).isPathIgnored ?? false,
   };
 }
 
@@ -298,6 +299,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       search,
       scope,
       include_system_heartbeat,
+      include_path_ignored,
       sort = 'req_timestamp',
       order = 'desc',
     } = req.query as Record<string, string>;
@@ -311,6 +313,7 @@ export async function connectionRoutes(fastify: FastifyInstance) {
     const baseAnd: Prisma.ConnectionWhereInput[] = [];
     if (!canViewAll) baseAnd.push(trafficScopeForUser(req.user));
     if (include_system_heartbeat !== 'true') baseAnd.push({ isSystemHeartbeat: false } as any);
+    if (include_path_ignored !== 'true') baseAnd.push({ isPathIgnored: false } as any);
 
     const parsedFilters = parseFilterConditions(filters);
     let filterClauses: { logic: 'and' | 'or'; clause: Prisma.ConnectionWhereInput }[] = [];

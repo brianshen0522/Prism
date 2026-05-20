@@ -60,6 +60,7 @@ model BackendServer {
   heartbeatExpectedStatus     Int?                        @default(200) @map("heartbeat_expected_status")
   heartbeatTimeoutSeconds     Int?                        @default(10) @map("heartbeat_timeout_seconds")
   heartbeatTlsVerify          Boolean                     @default(true) @map("heartbeat_tls_verify")
+  ignoredPaths                String[]                    @default([]) @map("ignored_paths")
   connections                 Connection[]
   oauthAuthServer             BackendServer?              @relation("OAuthAuthServer", fields: [oauthAuthServerId], references: [id])
   oauthResourceServers        BackendServer[]             @relation("OAuthAuthServer")
@@ -97,6 +98,7 @@ model Connection {
   participantTokenInvalidReason String?                    @map("participant_token_invalid_reason")
   isSystemHeartbeat             Boolean                    @default(false) @map("is_system_heartbeat")
   heartbeatId                   String?                    @map("heartbeat_id")
+  isPathIgnored                 Boolean                    @default(false) @map("is_path_ignored")
   accessTokenHash               String?                    @map("access_token_hash")
   accessTokenPreview            String?                    @map("access_token_preview")
   refreshTokenHash              String?                    @map("refresh_token_hash")
@@ -118,6 +120,7 @@ model Connection {
   @@index([issuedAccessTokenHash])
   @@index([issuedRefreshTokenHash])
   @@index([connectionKind])
+  @@index([isPathIgnored])
   @@index([institutionId])
   @@index([participantTokenValid])
   @@map("connections")

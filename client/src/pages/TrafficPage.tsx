@@ -151,6 +151,11 @@ function TrafficRow({ c, isNew, selected, onSelect }: {
               heartbeat
             </Badge>
           )}
+          {c.is_path_ignored && (
+            <Badge className="bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-400">
+              filtered
+            </Badge>
+          )}
         </div>
       </td>
       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 truncate max-w-[100px]">{c.server_name ?? '—'}</td>
@@ -323,6 +328,7 @@ export function TrafficPage() {
     return value === 'success' || value === 'failed' ? value : 'all';
   });
   const [showHeartbeatTraffic, setShowHeartbeatTraffic] = useState(() => searchParams.get('show_heartbeat') === 'true');
+  const [showPathIgnoredTraffic, setShowPathIgnoredTraffic] = useState(() => searchParams.get('show_path_ignored') === 'true');
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedId(null); };
@@ -344,6 +350,9 @@ export function TrafficPage() {
     setSearchParams((prev) => {
       if (showHeartbeatTraffic) prev.set('show_heartbeat', 'true');
       else prev.delete('show_heartbeat');
+
+      if (showPathIgnoredTraffic) prev.set('show_path_ignored', 'true');
+      else prev.delete('show_path_ignored');
 
       if (oauthAccessToken.trim()) prev.set('oauth_access_token', oauthAccessToken.trim());
       else prev.delete('oauth_access_token');
@@ -368,7 +377,7 @@ export function TrafficPage() {
 
       return prev;
     });
-  }, [showHeartbeatTraffic, oauthAccessToken, oauthParticipantInstitutionIds, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
+  }, [showHeartbeatTraffic, showPathIgnoredTraffic, oauthAccessToken, oauthParticipantInstitutionIds, oauthParticipantUserIds, oauthAuthServerIds, oauthResourceServerIds, oauthLegal, oauthSuccess, setSearchParams]);
 
   const view = (searchParams.get('view') ?? 'raw') as 'raw' | 'oauth';
   const sort      = searchParams.get('sort')  ?? 'req_timestamp';
@@ -398,6 +407,7 @@ export function TrafficPage() {
     requiredConditions.some(isFilterConditionActive) ||
     conditions.some(isFilterConditionActive) ||
     showHeartbeatTraffic ||
+    showPathIgnoredTraffic ||
     sort !== 'req_timestamp' || order !== 'desc';
 
   useEffect(() => {
@@ -456,9 +466,11 @@ export function TrafficPage() {
       prev.delete('sort');
       prev.delete('order');
       prev.delete('show_heartbeat');
+      prev.delete('show_path_ignored');
       return prev;
     });
     setShowHeartbeatTraffic(false);
+    setShowPathIgnoredTraffic(false);
   };
 
   const { data: servers = [] } = useQuery({ queryKey: ['dashboard-servers'], queryFn: fetchDashboardServers });
@@ -501,7 +513,7 @@ export function TrafficPage() {
 
   const queryKey = [
     'connections-global',
-    trafficScope, filtersString ?? '', showHeartbeatTraffic ? 'heartbeat' : 'default', sort, order,
+    trafficScope, filtersString ?? '', showHeartbeatTraffic ? 'heartbeat' : 'default', showPathIgnoredTraffic ? 'path_ignored' : 'default_path', sort, order,
   ];
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isFetching } = useInfiniteQuery({
@@ -511,6 +523,7 @@ export function TrafficPage() {
       filters: filtersString,
       scope: trafficScope,
       include_system_heartbeat: showHeartbeatTraffic,
+      include_path_ignored: showPathIgnoredTraffic,
       sort, order,
     }),
     initialPageParam: 1,
@@ -581,14 +594,14 @@ export function TrafficPage() {
 
   const handleWsMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'connection:new' || msg.type === 'connection:completed' || msg.type === 'connection:error') {
-      const payload = msg.payload as { id: string } | undefined;
-      if (payload?.id) {
-        setNewIds((prev) => new Set([...prev, payload.id]));
-        setTimeout(() => setNewIds((prev) => { const n = new Set(prev); n.delete(payload.id); return n; }), 3000);
-      }
+      const payload = msg.payload as { id: string; isPathIgnored?: boolean } | undefined;
+      if (!payload?.id) return;
+      if (payload.isPathIgnored && !showPathIgnoredTraffic) return;
+      setNewIds((prev) => new Set([...prev, payload.id]));
+      setTimeout(() => setNewIds((prev) => { const n = new Set(prev); n.delete(payload.id); return n; }), 3000);
       qc.invalidateQueries({ queryKey });
     }
-  }, [qc, queryKey]);
+  }, [qc, queryKey, showPathIgnoredTraffic]);
 
   const wsChannel = canViewAllTraffic
     ? 'traffic:all'
@@ -713,16 +726,26 @@ export function TrafficPage() {
               onRequiredChange={handleRequiredChange}
               onChange={setConditions}
             />
-            <div className="mt-4 flex items-center gap-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
-              <input
-                id="show_heartbeat_traffic_global"
-                type="checkbox"
-                checked={showHeartbeatTraffic}
-                onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <label htmlFor="show_heartbeat_traffic_global" className="text-gray-700 dark:text-gray-300">
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
+              <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                <input
+                  id="show_heartbeat_traffic_global"
+                  type="checkbox"
+                  checked={showHeartbeatTraffic}
+                  onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
                 Show system heartbeat traffic
+              </label>
+              <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                <input
+                  id="show_path_ignored_traffic_global"
+                  type="checkbox"
+                  checked={showPathIgnoredTraffic}
+                  onChange={(e) => setShowPathIgnoredTraffic(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Show path-filtered traffic
               </label>
             </div>
           </FilterCard>
@@ -874,16 +897,26 @@ export function TrafficPage() {
                 onRequiredChange={handleRequiredChange}
                 onChange={setConditions}
               />
-              <div className="flex items-center gap-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
-                <input
-                  id="show_heartbeat_traffic_global_mobile"
-                  type="checkbox"
-                  checked={showHeartbeatTraffic}
-                  onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                <label htmlFor="show_heartbeat_traffic_global_mobile" className="text-gray-700 dark:text-gray-300">
+              <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
+                <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                  <input
+                    id="show_heartbeat_traffic_global_mobile"
+                    type="checkbox"
+                    checked={showHeartbeatTraffic}
+                    onChange={(e) => setShowHeartbeatTraffic(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
                   Show system heartbeat traffic
+                </label>
+                <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                  <input
+                    id="show_path_ignored_traffic_global_mobile"
+                    type="checkbox"
+                    checked={showPathIgnoredTraffic}
+                    onChange={(e) => setShowPathIgnoredTraffic(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  Show path-filtered traffic
                 </label>
               </div>
             </div>

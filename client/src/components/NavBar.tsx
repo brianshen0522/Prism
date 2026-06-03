@@ -36,9 +36,7 @@ export function NavBar() {
           { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
           { to: '/traffic', label: 'Traffic', icon: Globe },
         ]
-      : role !== 'user'
-      ? [{ to: '/traffic', label: 'Traffic', icon: Globe }]
-      : []),
+      : [{ to: '/traffic', label: 'Traffic', icon: Globe }]),
     { to: '/token', label: 'My Token', icon: KeyRound },
     { to: '/guide', label: 'Integration Guide', icon: BookOpen },
     ...(isAdmin ? adminLinks : []),

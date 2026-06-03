@@ -679,7 +679,7 @@ export function TrafficPage() {
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filters
             </Button>
-            {view === 'raw' && (
+            {view === 'raw' && currentUser?.role !== 'user' && (
               <Button variant={live ? 'primary' : 'secondary'} size="sm" onClick={() => setLive((v) => { if (!v) refetch(); return !v; })}>
                 {live ? <RadioTower className="h-3.5 w-3.5 animate-pulse" /> : <Radio className="h-3.5 w-3.5" />}
                 {live ? 'Live' : 'Live off'}

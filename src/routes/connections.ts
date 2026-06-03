@@ -513,17 +513,23 @@ export async function connectionRoutes(fastify: FastifyInstance) {
   });
 
   // GET /api/institutions — privileged dropdown data for institution filters
+  // Derives the list from distinct institution IDs seen in Connection records (same approach as OAuth filter-options)
   fastify.get('/institutions', { preHandler: [authenticate, requireRole('admin', 'monitor')] }, async (_req, reply) => {
-    const institutions = await gazelle.gazelleInstitution.findMany({
-      where: { activated: true },
-      select: { id: true, name: true, keyword: true },
-      orderBy: { name: 'asc' },
+    const rows = await prism.connection.findMany({
+      where: { institutionId: { not: null } },
+      select: { institutionId: true },
+      distinct: ['institutionId'],
     });
-    reply.send((institutions as GazelleInstitutionRow[]).map((institution) => ({
-      id: institution.id,
-      name: institution.name,
-      keyword: institution.keyword,
-    })));
+    const ids = Array.from(new Set(rows.map((r) => r.institutionId).filter((id): id is number => id !== null)));
+    const institutions = ids.length > 0
+      ? await gazelle.gazelleInstitution.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, keyword: true },
+        })
+      : [];
+    const result = (institutions as GazelleInstitutionRow[])
+      .sort((a, b) => a.name.localeCompare(b.name));
+    reply.send(result);
   });
 
   // GET /api/users  — privileged: list all Gazelle users for filter dropdown

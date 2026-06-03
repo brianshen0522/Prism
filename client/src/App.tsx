@@ -25,13 +25,6 @@ function AdminOnlyRoute({ children }: { children: ReactNode }) {
   return children;
 }
 
-function NonUserRoute({ children }: { children: ReactNode }) {
-  const role = useAuthStore((s) => s.user?.role);
-  if (role === 'user') {
-    return <Navigate to="/guide" replace />;
-  }
-  return children;
-}
 
 function DefaultRedirect() {
   const role = useAuthStore((s) => s.user?.role);
@@ -57,7 +50,7 @@ export default function App() {
           <Route path="/connections/:id" element={<ConnectionDetailPage />} />
           <Route path="/token" element={<TokenPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/traffic" element={<NonUserRoute><TrafficPage /></NonUserRoute>} />
+          <Route path="/traffic" element={<TrafficPage />} />
           <Route path="/oauth/pipelines/:id" element={<OAuthPipelineDetailPage />} />
           <Route path="/users" element={<AdminOnlyRoute><UsersPage /></AdminOnlyRoute>} />
           <Route path="/servers" element={<ServersPage />} />

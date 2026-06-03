@@ -32,6 +32,26 @@ function ShareLinkButton({ shareToken }: { shareToken: string | null | undefined
   );
 }
 
+function CopyTokenButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function handle() {
+    await copyToClipboard(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={handle}
+      className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
+      title="Copy full token"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : null}
+      {copied ? 'Copied' : 'Copy token'}
+    </button>
+  );
+}
+
 function StatusBadge({ ok, trueLabel, falseLabel, falseTone = 'error' }: {
   ok: boolean;
   trueLabel: string;
@@ -697,12 +717,7 @@ export function OAuthPipelineDetailPage() {
             <p className="text-xs uppercase tracking-wide text-gray-400">Access Token</p>
             <p className="font-mono text-sm">{summary.access_token.fingerprint}</p>
             {data.access_token_full && (
-              <details className="pt-1">
-                <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-700">Show full token</summary>
-                <p className="mt-2 break-all rounded-md bg-gray-50 px-2 py-2 font-mono text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
-                  {data.access_token_full}
-                </p>
-              </details>
+              <CopyTokenButton value={data.access_token_full} />
             )}
           </CardContent>
         </Card>

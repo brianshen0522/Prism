@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Check } from 'lucide-react';
 import { fetchPublicConnection, fetchPublicOAuthPipeline } from '../lib/api';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
@@ -8,7 +9,27 @@ import { Skeleton } from '../components/ui/skeleton';
 import { ViewLayout } from '../components/ViewLayout';
 import { ConnectionInspectPanel } from '../components/ConnectionInspectPanel';
 import { OAuthFlowMap } from './OAuthPipelineDetailPage';
-import { fmtDate } from '../lib/utils';
+import { fmtDate, copyToClipboard } from '../lib/utils';
+
+function CopyTokenButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function handle() {
+    await copyToClipboard(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={handle}
+      className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
+      title="Copy full token"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : null}
+      {copied ? 'Copied' : 'Copy token'}
+    </button>
+  );
+}
 
 function StatusBadge({ ok, trueLabel, falseLabel }: { ok: boolean; trueLabel: string; falseLabel: string }) {
   return (
@@ -79,7 +100,13 @@ export function OAuthPipelineViewPage() {
                   </CardContent>
                 </Card>
                 <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Authentication Server</p><p className="text-sm font-medium">{data.summary.authentication_server?.name ?? '—'}</p></CardContent></Card>
-                <Card><CardContent className="p-4 space-y-1"><p className="text-xs uppercase tracking-wide text-gray-400">Access Token</p><p className="font-mono text-sm">{data.summary.access_token.fingerprint}</p></CardContent></Card>
+                <Card>
+                  <CardContent className="p-4 space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-gray-400">Access Token</p>
+                    <p className="font-mono text-sm">{data.summary.access_token.fingerprint}</p>
+                    {data.access_token_full && <CopyTokenButton value={data.access_token_full} />}
+                  </CardContent>
+                </Card>
               </div>
 
               <OAuthFlowMap

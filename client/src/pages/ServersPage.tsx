@@ -1034,14 +1034,15 @@ function ServerForm({ initial, allServers, onSave, onClose, saving, error }: Ser
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Requests matching these paths are still captured but hidden from traffic by default.
             One pattern per line.{' '}
-            <span className="font-medium">No wildcard</span> = exact match (<code className="font-mono">/health</code>).{' '}
-            <code className="font-mono">*</code> = wildcard (<code className="font-mono">/health*</code>, <code className="font-mono">/api/*/ping</code>).
+            <span className="font-medium">Exact</span>: <code className="font-mono">/health</code>.{' '}
+            <span className="font-medium">Wildcard</span> (<code className="font-mono">*</code>): <code className="font-mono">/api/*</code>, <code className="font-mono">/api/*/ping</code>.{' '}
+            <span className="font-medium">Extension</span>: <code className="font-mono">.css</code> or <code className="font-mono">*.css</code> matches any path ending in <code className="font-mono">.css</code>; <code className="font-mono">/web/*.css</code> limits to a prefix.
           </p>
         </div>
         <textarea
           value={ignoredPathsText}
           onChange={(e) => setIgnoredPathsText(e.target.value)}
-          placeholder={'/health\n/actuator*\n/api/*/status'}
+          placeholder={'/health\n/actuator/*\n.css\n*.js\n/web/*.json'}
           rows={4}
           className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-xs text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
           spellCheck={false}

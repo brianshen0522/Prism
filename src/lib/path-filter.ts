@@ -5,11 +5,13 @@ export function matchesIgnoredPath(url: string, patterns: string[]): boolean {
 }
 
 function matchPattern(path: string, pattern: string): boolean {
-  if (!pattern.includes('*')) {
-    return path === pattern;
+  // Extension shorthand: ".css" → "*.css" (matches any path ending with that extension)
+  const normalized = /^\.[a-zA-Z0-9]+$/.test(pattern) ? `*${pattern}` : pattern;
+  if (!normalized.includes('*')) {
+    return path === normalized;
   }
   const regex = new RegExp(
-    '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
+    '^' + normalized.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
   );
   return regex.test(path);
 }

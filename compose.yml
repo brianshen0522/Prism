@@ -22,6 +22,8 @@ services:
       POSTGRES_DB: ${PROXY_DB_NAME:-prism}
       POSTGRES_USER: ${PROXY_DB_USER:-prism}
       POSTGRES_PASSWORD: ${PROXY_DB_PASS}
+    ports:
+      - "5433:5432"
     volumes:
       - prism_pgdata:/var/lib/postgresql/data
     healthcheck:

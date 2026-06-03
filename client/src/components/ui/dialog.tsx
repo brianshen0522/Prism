@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -22,7 +23,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         ref={overlayRef}
@@ -46,6 +47,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

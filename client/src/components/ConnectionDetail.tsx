@@ -3,25 +3,85 @@ import { Building2, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownU
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
+import { Dialog } from './ui/dialog';
 import { copyToClipboard, fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor, methodColor } from '../lib/utils';
 import type { ConnectionDetail } from '../lib/api';
+
+// ─── JWT decode ───────────────────────────────────────────────────────────────
+
+type JwtDecoded = { header: Record<string, unknown>; payload: Record<string, unknown> };
+
+function decodeJwt(token: string): JwtDecoded | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const b64 = (s: string) => {
+      const padded = s.replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+    };
+    const header = b64(parts[0]);
+    const payload = b64(parts[1]);
+    if (typeof header !== 'object' || header === null) return null;
+    if (typeof payload !== 'object' || payload === null) return null;
+    return { header: header as Record<string, unknown>, payload: payload as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+}
+
+const TIME_CLAIMS = new Set(['exp', 'iat', 'nbf']);
+
+function fmtClaimValue(key: string, value: unknown): string {
+  if (TIME_CLAIMS.has(key) && typeof value === 'number') {
+    return `${value}  ·  ${new Date(value * 1000).toLocaleString()}`;
+  }
+  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+  return String(value);
+}
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
 
 function HeadersTable({ headers }: { headers: Record<string, string | string[]> | null }) {
+  const [jwtData, setJwtData] = useState<{ raw: string; decoded: JwtDecoded } | null>(null);
+
   if (!headers || !Object.keys(headers).length)
     return <p className="text-xs text-gray-400 dark:text-gray-500">No headers</p>;
+
   return (
-    <table className="w-full text-xs font-mono">
-      <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
-        {Object.entries(headers).map(([k, v]) => (
-          <tr key={k}>
-            <td className="py-1 pr-4 text-gray-500 dark:text-gray-400 whitespace-nowrap align-top w-48">{k}</td>
-            <td className="py-1 text-gray-800 dark:text-gray-200 break-all">{Array.isArray(v) ? v.join(', ') : v}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <>
+      <table className="w-full text-xs font-mono">
+        <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+          {Object.entries(headers).map(([k, v]) => {
+            const raw = Array.isArray(v) ? v.join(', ') : v;
+            const isAuth = k.toLowerCase() === 'authorization';
+            const bearerToken = isAuth && raw.toLowerCase().startsWith('bearer ') ? raw.slice(raw.indexOf(' ') + 1).trim() : null;
+            const decoded = bearerToken ? decodeJwt(bearerToken) : null;
+            return (
+              <tr key={k}>
+                <td className="py-1 pr-4 text-gray-500 dark:text-gray-400 whitespace-nowrap align-top w-48">{k}</td>
+                <td className="py-1 text-gray-800 dark:text-gray-200 break-all">
+                  {decoded && bearerToken ? (
+                    <>
+                      Bearer{' '}
+                      <button
+                        type="button"
+                        onClick={() => setJwtData({ raw: bearerToken, decoded })}
+                        className="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 break-all text-left select-text"
+                      >
+                        {bearerToken}
+                      </button>
+                    </>
+                  ) : raw}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {jwtData && (
+        <JwtDecodeModal raw={jwtData.raw} decoded={jwtData.decoded} onClose={() => setJwtData(null)} />
+      )}
+    </>
   );
 }
 
@@ -48,6 +108,47 @@ function CopyButton({ value, label = 'Copy', icon }: { value: string; label?: st
       {copied ? <Check className="h-3 w-3" /> : (icon ?? <Copy className="h-3 w-3" />)}
       {copied ? 'Copied' : label}
     </button>
+  );
+}
+
+function JwtDecodeModal({ raw, decoded, onClose }: { raw: string; decoded: JwtDecoded; onClose: () => void }) {
+  return (
+    <Dialog open title="Decode JWT" onClose={onClose} className="max-w-4xl">
+      <div className="space-y-5">
+        <div>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Header</p>
+          <table className="w-full text-xs font-mono">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {Object.entries(decoded.header).map(([k, v]) => (
+                <tr key={k}>
+                  <td className="py-1 pr-4 align-top text-gray-500 dark:text-gray-400 whitespace-nowrap w-20">{k}</td>
+                  <td className="py-1 text-gray-800 dark:text-gray-200 break-all">{String(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Payload</p>
+          <table className="w-full text-xs font-mono">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {Object.entries(decoded.payload).map(([k, v]) => (
+                <tr key={k}>
+                  <td className="py-1 pr-4 align-top text-gray-500 dark:text-gray-400 whitespace-nowrap w-20">{k}</td>
+                  <td className="py-1 text-gray-800 dark:text-gray-200 break-all">{fmtClaimValue(k, v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-700">
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">⚠ Signature not verified — display only</p>
+          <CopyButton value={raw} label="Copy token" />
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -90,8 +191,8 @@ function detectMode(body: string, contentType?: string): ViewMode {
 
 type JsonVal = string | number | boolean | null | JsonVal[] | { [k: string]: JsonVal };
 
-interface JsonTreeCtxType { sig: number; expand: boolean; term: string; }
-const JsonTreeCtx = createContext<JsonTreeCtxType>({ sig: 0, expand: true, term: '' });
+interface JsonTreeCtxType { sig: number; expand: boolean; term: string; onJwtClick: ((raw: string, decoded: JwtDecoded) => void) | null; }
+const JsonTreeCtx = createContext<JsonTreeCtxType>({ sig: 0, expand: true, term: '', onJwtClick: null });
 
 function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -110,7 +211,7 @@ function Highlighted({ text, term }: { text: string; term: string }) {
 }
 
 function JsonPrimitive({ value }: { value: string | number | boolean | null }) {
-  const { term } = useContext(JsonTreeCtx);
+  const { term, onJwtClick } = useContext(JsonTreeCtx);
   if (value === null) return <span className="text-gray-400 dark:text-gray-500">null</span>;
   if (typeof value === 'boolean') return <span className="text-purple-600 dark:text-purple-400">{String(value)}</span>;
   if (typeof value === 'number') {
@@ -122,6 +223,20 @@ function JsonPrimitive({ value }: { value: string | number | boolean | null }) {
   }
   const encoded = JSON.stringify(value);
   const inner = encoded.slice(1, -1);
+  const jwtDecoded = onJwtClick && typeof value === 'string' && value.startsWith('eyJ') ? decodeJwt(value) : null;
+  if (jwtDecoded && onJwtClick) {
+    return (
+      <span className="text-green-700 dark:text-green-400">
+        &quot;<span
+          role="button"
+          tabIndex={0}
+          onClick={() => { if (!window.getSelection()?.toString()) onJwtClick(value, jwtDecoded); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') onJwtClick(value, jwtDecoded); }}
+          className="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer"
+        ><Highlighted text={inner} term={term} /></span>&quot;
+      </span>
+    );
+  }
   return (
     <span className="text-green-700 dark:text-green-400">
       &quot;<Highlighted text={inner} term={term} />&quot;
@@ -164,7 +279,7 @@ function JsonNode({ value, propKey, isLast, depth }: { value: JsonVal; propKey?:
 
   return (
     <div>
-      <div className="leading-5 flex items-center gap-0.5 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700 rounded -mx-1 px-1" onClick={() => setOpen(o => !o)}>
+      <div className="leading-5 flex items-center gap-0.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded -mx-1 px-1" onClick={() => { if (!window.getSelection()?.toString()) setOpen(o => !o); }}>
         <span className="text-gray-400 dark:text-gray-500 w-3 text-center shrink-0 text-[10px]">{open ? '▾' : '▸'}</span>
         {keyEl}
         <span className="text-gray-500 dark:text-gray-400">{ob}</span>
@@ -197,6 +312,7 @@ function JsonTree({ body }: { body: string }) {
   const [term, setTerm] = useState('');
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
+  const [jwtData, setJwtData] = useState<{ raw: string; decoded: JwtDecoded } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   function trigger(e: boolean) { setExpand(e); setSig(s => s + 1); }
@@ -233,7 +349,7 @@ function JsonTree({ body }: { body: string }) {
   const nextMatch = () => setActiveMatchIdx(i => Math.min(matchCount - 1, i + 1));
 
   return (
-    <JsonTreeCtx.Provider value={{ sig, expand, term }}>
+    <JsonTreeCtx.Provider value={{ sig, expand, term, onJwtClick: (raw, decoded) => setJwtData({ raw, decoded }) }}>
       <div className="rounded border border-gray-200 dark:border-gray-700 overflow-hidden text-xs font-mono">
         <div className="flex flex-col gap-2 px-3 py-1.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 sm:flex-row sm:items-center sm:gap-1.5">
           <div className="flex items-center gap-1.5 flex-1 min-w-0 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 sm:py-0.5">
@@ -287,7 +403,55 @@ function JsonTree({ body }: { body: string }) {
           <JsonNode value={parsed} isLast propKey={undefined} depth={0} />
         </div>
       </div>
+      {jwtData && (
+        <JwtDecodeModal raw={jwtData.raw} decoded={jwtData.decoded} onClose={() => setJwtData(null)} />
+      )}
     </JsonTreeCtx.Provider>
+  );
+}
+
+function splitByJwt(text: string) {
+  const regex = /eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*/g;
+  const parts: Array<{ type: 'text'; value: string } | { type: 'jwt'; value: string; decoded: JwtDecoded }> = [];
+  let last = 0;
+  for (const match of text.matchAll(regex)) {
+    const idx = match.index!;
+    if (idx > last) parts.push({ type: 'text', value: text.slice(last, idx) });
+    const decoded = decodeJwt(match[0]);
+    parts.push(decoded ? { type: 'jwt', value: match[0], decoded } : { type: 'text', value: match[0] });
+    last = idx + match[0].length;
+  }
+  if (last < text.length) parts.push({ type: 'text', value: text.slice(last) });
+  return parts;
+}
+
+function RawBodyWithJwt({ body }: { body: string }) {
+  const [jwtData, setJwtData] = useState<{ raw: string; decoded: JwtDecoded } | null>(null);
+  const parts = splitByJwt(body);
+  return (
+    <>
+      <pre className="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-700 p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all dark:text-gray-200">
+        {parts.map((part, i) =>
+          part.type === 'jwt' ? (
+            <span
+              key={i}
+              role="button"
+              tabIndex={0}
+              onClick={() => { if (!window.getSelection()?.toString()) setJwtData({ raw: part.value, decoded: part.decoded }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') setJwtData({ raw: part.value, decoded: part.decoded }); }}
+              className="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer"
+            >
+              {part.value}
+            </span>
+          ) : (
+            <span key={i}>{part.value}</span>
+          )
+        )}
+      </pre>
+      {jwtData && (
+        <JwtDecodeModal raw={jwtData.raw} decoded={jwtData.decoded} onClose={() => setJwtData(null)} />
+      )}
+    </>
   );
 }
 
@@ -330,9 +494,7 @@ export function BodyBlock({ body, truncated, contentType }: { body: string | nul
           <div className="flex justify-end">
             <CopyButton value={body} label="Copy raw" />
           </div>
-          <pre className="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-700 p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all dark:text-gray-200">
-            {body}
-          </pre>
+          <RawBodyWithJwt body={body} />
         </div>
       )}
       {mode === 'json' && isValidJson && <JsonTree body={body} />}

@@ -17,7 +17,7 @@ import { EmptyState, TableCard, TableScroller } from '../components/PagePrimitiv
 import { Badge } from '../components/ui/badge';
 import { Dialog } from '../components/ui/dialog';
 import { Skeleton } from '../components/ui/skeleton';
-import { fmtDate } from '../lib/utils';
+import { fmtDate, copyToClipboard } from '../lib/utils';
 
 // ─── Server status badges ─────────────────────────────────────────────────────
 
@@ -1333,7 +1333,7 @@ export function ServersPage() {
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Target URL</th>
+                    <th className="px-4 py-3 font-medium">User Access URL</th>
                     <th className="px-4 py-3 font-medium">Port</th>
                     <th className="px-4 py-3 font-medium">Limit</th>
                     <th className="px-4 py-3 font-medium">Status</th>
@@ -1354,8 +1354,15 @@ export function ServersPage() {
                           <RuntimeBadges server={s} compact />
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-top font-mono text-xs text-gray-600 dark:text-gray-400" title={s.target_url}>
-                        <div className="truncate">{s.target_url}</div>
+                      <td className="px-4 py-3 align-top font-mono text-xs">
+                        <button
+                          type="button"
+                          title="Click to copy"
+                          onClick={() => copyToClipboard(s.heartbeat_url || s.target_url)}
+                          className="truncate block max-w-[240px] text-left text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer"
+                        >
+                          {s.heartbeat_url || s.target_url}
+                        </button>
                       </td>
                       <td className="px-4 py-3 align-top font-mono text-xs text-gray-600 dark:text-gray-400">{s.proxy_port}</td>
                       <td className="px-4 py-3 align-top text-xs text-gray-500 dark:text-gray-400">

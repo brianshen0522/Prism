@@ -135,14 +135,12 @@ export function classifyOAuthConnection(input: {
   if (
     input.server.serverRole === 'authentication' &&
     pathMatches(input.server.oauthTokenEndpoint ?? null, input.connection.reqUrl) &&
-    participantTokenPresent &&
     !!issuedAccessTokenHash
   ) {
     connectionKind = 'oauth_token_issue';
     oauthCallerType = 'client';
   } else if (
     input.server.serverRole === 'resource' &&
-    participantTokenPresent &&
     !!accessTokenHash
   ) {
     connectionKind = 'resource_access';

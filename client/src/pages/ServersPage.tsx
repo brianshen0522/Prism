@@ -197,6 +197,16 @@ function buildHeartbeatUrl(protocol: BackendProtocol, host: string, port: string
   return `${buildBackendUrl(protocol, host, port)}${normalizePath(path)}`;
 }
 
+function extractPort(url: string | null | undefined): string {
+  try {
+    const parsed = new URL(url || '');
+    if (parsed.port) return parsed.port;
+    return parsed.protocol === 'https:' ? '443' : '80';
+  } catch {
+    return '';
+  }
+}
+
 function defaultHeartbeatPathForRole(role: AdminServer['server_role']) {
   return role === 'authentication' ? '/health' : '/';
 }
@@ -1364,7 +1374,7 @@ export function ServersPage() {
                           {s.heartbeat_url || s.target_url}
                         </button>
                       </td>
-                      <td className="px-4 py-3 align-top font-mono text-xs text-gray-600 dark:text-gray-400">{s.proxy_port}</td>
+                      <td className="px-4 py-3 align-top font-mono text-xs text-gray-600 dark:text-gray-400">{extractPort(s.heartbeat_url || s.target_url)}</td>
                       <td className="px-4 py-3 align-top text-xs text-gray-500 dark:text-gray-400">
                         {s.body_size_limit_kb ? `${s.body_size_limit_kb} KB` : '∞'}
                       </td>

@@ -894,6 +894,44 @@ export async function deleteSetting(key: string) {
   if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
 }
 
+// ─── Admin: Data Management (export / import) ────────────────────────────────
+
+export interface AdminTask {
+  id: string;
+  type: 'export' | 'import';
+  status: 'pending' | 'running' | 'done' | 'error';
+  progress: number;
+  message: string | null;
+  download_token: string | null;
+  created_by: number;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export function startExport() {
+  return json<{ task_id: string }>('/admin/data/export', { method: 'POST' });
+}
+
+export function startImport(body: unknown) {
+  return json<{ task_id: string }>('/admin/data/import', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchTask(id: string) {
+  return json<AdminTask>(`/admin/data/tasks/${id}`);
+}
+
+export function fetchTasks() {
+  return json<AdminTask[]>('/admin/data/tasks');
+}
+
+export function getDownloadUrl(token: string) {
+  return `${import.meta.env.BASE_URL}api/admin/data/download/${token}`;
+}
+
 // ─── Public (unauthenticated) view endpoints ──────────────────────────────────
 
 async function publicJson<T>(path: string): Promise<T> {

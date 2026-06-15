@@ -13,6 +13,7 @@ import { adminUsersRoutes } from './routes/admin-users';
 import { oauthRoutes } from './routes/oauth';
 import { integrationGuideRoutes } from './routes/integration-guide';
 import { publicRoutes } from './routes/public';
+import { dataRoutes } from './routes/data';
 import { setupWebSocket } from './ws/setup';
 import { initializeServerHealth, shutdownServerHealth } from './servers/health';
 
@@ -43,6 +44,7 @@ export async function buildApp() {
   await app.register(oauthRoutes, { prefix: api });
   await app.register(integrationGuideRoutes, { prefix: api });
   await app.register(publicRoutes, { prefix: api });
+  await app.register(dataRoutes, { prefix: api });
 
   // Redirect bare "/" to the base path when BASE_PATH is set
   if (bp) {

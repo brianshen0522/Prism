@@ -16,6 +16,7 @@ import { OAuthPipelineDetailPage } from './pages/OAuthPipelineDetailPage';
 import { ServersPage } from './pages/ServersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UsersPage } from './pages/UsersPage';
+import { DataManagementPage } from './pages/DataManagementPage';
 
 function AdminOnlyRoute({ children }: { children: ReactNode }) {
   const role = useAuthStore((s) => s.user?.role);
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/users" element={<AdminOnlyRoute><UsersPage /></AdminOnlyRoute>} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/data" element={<AdminOnlyRoute><DataManagementPage /></AdminOnlyRoute>} />
         </Route>
       </Route>
 

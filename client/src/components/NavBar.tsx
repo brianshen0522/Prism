@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor, Users } from 'lucide-react';
+import { LogOut, KeyRound, LayoutDashboard, Globe, Server, Settings, Menu, X, BookOpen, Sun, Moon, Monitor, Users, Database } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type Theme } from '../store/theme';
 import { logout } from '../lib/api';
@@ -14,6 +14,7 @@ const adminLinks = [
   { to: '/users', label: 'Users', icon: Users },
   { to: '/servers', label: 'Servers', icon: Server },
   { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/data', label: 'Data', icon: Database },
 ];
 
 export function NavBar() {

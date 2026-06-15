@@ -207,3 +207,18 @@ model SystemSetting {
 
   @@map("system_settings")
 }
+
+model AdminTask {
+  id            String    @id @default(uuid())
+  type          String
+  status        String    @default("pending")
+  progress      Int       @default(0)
+  message       String?
+  downloadToken String?   @unique @map("download_token")
+  createdBy     Int       @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  completedAt   DateTime? @map("completed_at")
+  error         String?
+
+  @@map("admin_tasks")
+}

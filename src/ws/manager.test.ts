@@ -251,3 +251,31 @@ describe('emitConnectionNew', () => {
     expect(msgs.some((m) => m.type === 'connection:new' && m.payload.institutionId === 456)).toBe(true);
   });
 });
+
+// ─── handleMessage with malformed input ───────────────────────────────────────
+
+describe('handleMessage with valid JSON of the wrong shape', () => {
+  it.each(['null', '1', '"subscribe"', 'true'])('rejects %s without throwing', (raw) => {
+    const { ws, sent } = makeWS();
+    wsManager.addClient(ws, { sub: 1, username: 'u', role: 'user' });
+
+    expect(() => wsManager.handleMessage(ws, raw)).not.toThrow();
+    expect(lastMsg(sent).type).toBe('error');
+  });
+
+  it.each(['1', '{}', '[]', 'true'])('rejects subscribe with channel %s without throwing', (channel) => {
+    const { ws, sent } = makeWS();
+    wsManager.addClient(ws, { sub: 1, username: 'u', role: 'user' });
+
+    expect(() => wsManager.handleMessage(ws, `{"type":"subscribe","channel":${channel}}`)).not.toThrow();
+    expect(lastMsg(sent).error).toBe('channel required');
+  });
+
+  it('ignores unsubscribe with a non-string channel', () => {
+    const { ws, sent } = makeWS();
+    wsManager.addClient(ws, { sub: 1, username: 'u', role: 'user' });
+
+    wsManager.handleMessage(ws, '{"type":"unsubscribe","channel":1}');
+    expect(sent).toHaveLength(0);
+  });
+});

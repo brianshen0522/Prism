@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import http from 'http';
+import net from 'net';
 import { WebSocket } from 'ws';
 import type { AddressInfo } from 'net';
 import { signAccessToken } from '../lib/jwt';
@@ -113,5 +114,46 @@ describe('WebSocket setup', () => {
         ws.once('open', () => { resolve(); ws.close(); });
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe('WebSocket upgrade with malformed request targets', () => {
+  function rawUpgrade(requestLine: string, host: string): Promise<void> {
+    return new Promise((resolve) => {
+      const socket = net.connect(port, '127.0.0.1', () => {
+        socket.write(`${requestLine}\r\nHost: ${host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n`);
+      });
+      socket.on('close', () => resolve());
+      socket.on('error', () => resolve());
+      socket.resume();
+    });
+  }
+
+  it.each([
+    ['an unparseable Host header', 'GET /ws HTTP/1.1', '['],
+    ['an unparseable request path', 'GET // HTTP/1.1', 'localhost'],
+  ])('closes the socket and keeps serving after %s', async (_label, requestLine, host) => {
+    const uncaught = vi.fn();
+    process.on('uncaughtException', uncaught);
+    try {
+      await rawUpgrade(requestLine, host);
+    } finally {
+      process.off('uncaughtException', uncaught);
+    }
+    expect(uncaught).not.toHaveBeenCalled();
+
+    const token = signAccessToken({ sub: 1, username: 'u', role: 'admin' });
+    const { ws } = await connect(token);
+    ws.close();
+  });
+
+  it('accepts a normal upgrade whatever the Host header says', async () => {
+    const token = signAccessToken({ sub: 1, username: 'u', role: 'admin' });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`, { headers: { Host: 'prism.example.com:8443' } });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('message', () => resolve());
+      ws.once('error', reject);
+    });
+    ws.close();
   });
 });

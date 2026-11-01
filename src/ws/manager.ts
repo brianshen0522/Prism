@@ -48,7 +48,7 @@ class WSManager {
 
   // Handle an incoming raw message from a client
   handleMessage(ws: WebSocket, raw: string): void {
-    let msg: { type?: string; channel?: string };
+    let msg: { type?: unknown; channel?: unknown };
     try {
       msg = JSON.parse(raw);
     } catch {
@@ -56,9 +56,14 @@ class WSManager {
       return;
     }
 
+    if (typeof msg !== 'object' || msg === null) {
+      this.send(ws, { type: 'error', error: 'invalid message', ts: Date.now() });
+      return;
+    }
+
     switch (msg.type) {
       case 'subscribe': {
-        if (!msg.channel) {
+        if (typeof msg.channel !== 'string' || !msg.channel) {
           this.send(ws, { type: 'error', error: 'channel required', ts: Date.now() });
           return;
         }
@@ -72,7 +77,7 @@ class WSManager {
       }
 
       case 'unsubscribe': {
-        if (!msg.channel) return;
+        if (typeof msg.channel !== 'string' || !msg.channel) return;
         this.unsubscribe(ws, msg.channel);
         this.send(ws, { type: 'unsubscribed', channel: msg.channel, ts: Date.now() });
         break;
@@ -83,7 +88,7 @@ class WSManager {
         break;
 
       default:
-        this.send(ws, { type: 'error', error: `unknown type: ${msg.type}`, ts: Date.now() });
+        this.send(ws, { type: 'error', error: `unknown type: ${String(msg.type)}`, ts: Date.now() });
     }
   }
 

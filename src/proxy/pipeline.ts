@@ -16,6 +16,8 @@ import {
 import { classifyOAuthConnection } from '../oauth/extract';
 import { enqueueOAuthReconcile } from '../oauth/reconcile';
 import { matchesIgnoredPath } from '../lib/path-filter';
+import { config } from '../config';
+import { isPendingHeartbeatId } from '../servers/health';
 
 type ParticipantTokenInvalidReason = 'expired' | 'revoked' | null;
 
@@ -59,10 +61,23 @@ const HOP_BY_HOP = new Set([
 
 // ─── collectBody ──────────────────────────────────────────────────────────────
 
-function collectBody(stream: http.IncomingMessage): Promise<Buffer> {
+class BodyTooLargeError extends Error {}
+
+function collectBody(stream: http.IncomingMessage, maxBytes = Infinity): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let size = 0;
+    const onData = (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        stream.off('data', onData);
+        chunks.length = 0;
+        reject(new BodyTooLargeError());
+        return;
+      }
+      chunks.push(chunk);
+    };
+    stream.on('data', onData);
     stream.on('end', () => resolve(Buffer.concat(chunks)));
     stream.on('error', reject);
   });
@@ -76,13 +91,16 @@ const gunzip   = promisify(zlib.gunzip);
 const inflate  = promisify(zlib.inflate);
 const brotli   = promisify(zlib.brotliDecompress);
 
+// Stored copy only: anything larger keeps its compressed bytes
+const MAX_DECOMPRESSED_BYTES = 256 * 1024 * 1024;
+
 async function decompressBody(buffer: Buffer, encoding: string | undefined): Promise<Buffer> {
   if (!encoding || buffer.length === 0) return buffer;
   try {
     const enc = encoding.toLowerCase().trim();
-    if (enc === 'gzip' || enc === 'x-gzip') return await gunzip(buffer);
-    if (enc === 'deflate')                  return await inflate(buffer);
-    if (enc === 'br')                       return await brotli(buffer);
+    if (enc === 'gzip' || enc === 'x-gzip') return await gunzip(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES });
+    if (enc === 'deflate')                  return await inflate(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES });
+    if (enc === 'br')                       return await brotli(buffer, { maxOutputLength: MAX_DECOMPRESSED_BYTES });
   } catch {
     // Decompression failed — return original so the client response is unaffected
   }
@@ -282,7 +300,15 @@ export async function handleRequest(
   const startMs = Date.now();
 
   // Step 1 — Collect request body
-  const reqBodyBuffer = await collectBody(req);
+  let reqBodyBuffer: Buffer;
+  try {
+    reqBodyBuffer = await collectBody(req, config.proxy.maxBodyBytes);
+  } catch (err) {
+    if (!(err instanceof BodyTooLargeError)) throw err;
+    res.writeHead(413, { 'Content-Type': 'text/plain', Connection: 'close' });
+    res.end('Payload Too Large');
+    return;
+  }
 
   // Step 2 — Identify user (JWT > participant token > anonymous)
   const {
@@ -297,11 +323,15 @@ export async function handleRequest(
   const heartbeatIdHeader = Object.entries(sanitizedReqHeaders).find(
     ([key]) => key.toLowerCase() === 'x-prism-heartbeat-id',
   );
-  const heartbeatId = typeof heartbeatIdHeader?.[1] === 'string'
+  const claimedHeartbeatId = typeof heartbeatIdHeader?.[1] === 'string'
     ? heartbeatIdHeader[1]
     : Array.isArray(heartbeatIdHeader?.[1]) && typeof heartbeatIdHeader[1][0] === 'string'
       ? heartbeatIdHeader[1][0]
       : null;
+  // The header is client-controlled: only IDs issued by the heartbeat runner count
+  const heartbeatId = claimedHeartbeatId && isPendingHeartbeatId(claimedHeartbeatId)
+    ? claimedHeartbeatId
+    : null;
 
   // Step 3 — Apply body size limit for storage (full body is always forwarded)
   const { body: reqBody, truncated: reqBodyTruncated } = applyBodyLimit(

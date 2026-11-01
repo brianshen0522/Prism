@@ -29,6 +29,8 @@ const backendHistory = new Map<string, ProbeHistoryPoint[]>();
 const heartbeatHistory = new Map<string, ProbeHistoryPoint[]>();
 const lastHeartbeatAt = new Map<string, number>();
 const HISTORY_LIMIT = 24;
+// IDs of heartbeats in flight, so the proxy can tell them apart from client traffic
+const pendingHeartbeatIds = new Set<string>();
 
 let intervalHandle: NodeJS.Timeout | null = null;
 let running = false;
@@ -240,6 +242,7 @@ export async function runHeartbeat(server: Record<string, any>) {
   const expectedStatus = (server.heartbeatExpectedStatus as number | undefined) || 200;
   const tlsVerify = (server.heartbeatTlsVerify as boolean | undefined) ?? true;
 
+  pendingHeartbeatIds.add(heartbeatId);
   try {
     const sent = await doFetch(url, {
       method,
@@ -306,6 +309,8 @@ export async function runHeartbeat(server: Record<string, any>) {
       setHeartbeatResult(server.id as string, result);
       await runDirectBackendHeartbeat(server, expectedStatus);
       return result;
+    } finally {
+      pendingHeartbeatIds.delete(heartbeatId);
     }
 }
 
@@ -350,6 +355,10 @@ export function getServerHealth(serverId: string, heartbeatEnabled = true) {
     backendHistory: backendHistory.get(serverId) ?? [],
     proxyHistory: heartbeatEnabled ? (heartbeatHistory.get(serverId) ?? []) : [],
   };
+}
+
+export function isPendingHeartbeatId(id: string) {
+  return pendingHeartbeatIds.has(id);
 }
 
 export function getHeartbeatHeaderName() {

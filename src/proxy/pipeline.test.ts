@@ -10,6 +10,7 @@ vi.mock('../db/prism', () => ({
     connection: {
       create: vi.fn(),
       update: vi.fn(),
+      findMany: vi.fn(),
     },
     participantToken: {
       findUnique: vi.fn(),
@@ -36,6 +37,8 @@ import { handleRequest, applyBodyLimit, identifyUser } from './pipeline';
 import { signAccessToken } from '../lib/jwt';
 import { generateParticipantJwt } from '../lib/participant-token';
 import { prism } from '../db/prism';
+import { config } from '../config';
+import { runHeartbeat } from '../servers/health';
 
 const INSTITUTION_ID = 456;
 const INSTITUTION_NAME = 'Taiwan Hospital';
@@ -613,6 +616,63 @@ describe('handleRequest (pipeline)', () => {
       expect(lastTargetRequest?.body).toHaveLength(3000);
     } finally {
       await new Promise<void>((resolve) => proxyWithLimit.close(() => resolve()));
+    }
+  });
+});
+
+describe('heartbeat header', () => {
+  function rawGet(headers: http.OutgoingHttpHeaders): Promise<void> {
+    return new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port: proxyPort, path: '/', headers }, (res) => {
+        res.resume();
+        res.on('end', resolve);
+      }).on('error', reject);
+    });
+  }
+
+  it('does not mark client traffic as a system heartbeat', async () => {
+    await rawGet({ 'x-prism-heartbeat-id': 'client-chosen-value' });
+
+    const createCall = vi.mocked(prism.connection.create).mock.calls[0][0] as any;
+    expect(createCall.data.isSystemHeartbeat).toBe(false);
+    expect(createCall.data.heartbeatId).toBeNull();
+  });
+
+  it('marks requests sent by the heartbeat runner', async () => {
+    vi.mocked(prism.connection.findMany).mockResolvedValue([]);
+    await runHeartbeat({
+      id: testBackendServer.id,
+      targetUrl: `http://127.0.0.1:${proxyPort}`,
+      heartbeatUrl: `http://127.0.0.1:${proxyPort}`,
+      heartbeatPath: '/',
+    });
+
+    const createCall = vi.mocked(prism.connection.create).mock.calls[0][0] as any;
+    expect(createCall.data.isSystemHeartbeat).toBe(true);
+    expect(createCall.data.heartbeatId).toEqual(expect.any(String));
+  });
+});
+
+describe('request body cap', () => {
+  it('answers 413 and neither records nor forwards an oversized body', async () => {
+    const proxyConfig = config.proxy as { maxBodyBytes: number };
+    const original = proxyConfig.maxBodyBytes;
+    proxyConfig.maxBodyBytes = 1024;
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = http.request(
+          { hostname: '127.0.0.1', port: proxyPort, path: '/', method: 'POST' },
+          (res) => { res.resume(); resolve(res.statusCode!); },
+        );
+        req.on('error', reject);
+        req.end('x'.repeat(2048));
+      });
+
+      expect(status).toBe(413);
+      expect(prism.connection.create).not.toHaveBeenCalled();
+      expect(lastTargetRequest).toBeNull();
+    } finally {
+      proxyConfig.maxBodyBytes = original;
     }
   });
 });

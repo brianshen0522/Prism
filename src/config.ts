@@ -25,6 +25,7 @@ const envSchema = z.object({
   // Proxy port range
   PROXY_PORT_START: z.string().default('7001'),
   PROXY_PORT_END: z.string().default('7100'),
+  PROXY_MAX_BODY_MB: z.string().regex(/^[1-9]\d*$/, 'PROXY_MAX_BODY_MB must be a positive integer').default('256'),
   // JWT
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('8h'),
@@ -79,6 +80,7 @@ export const config = {
   proxy: {
     portStart: parseInt(env.PROXY_PORT_START, 10),
     portEnd: parseInt(env.PROXY_PORT_END, 10),
+    maxBodyBytes: parseInt(env.PROXY_MAX_BODY_MB, 10) * 1024 * 1024,
   },
   jwt: {
     secret: env.JWT_SECRET,

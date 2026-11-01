@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
 import { Dialog } from './ui/dialog';
 import { copyToClipboard, fmtDate, fmtDuration, fmtBytes, statusColor, httpStatusColor, methodColor } from '../lib/utils';
+import { shellQuote } from '../lib/shell';
 import type { ConnectionDetail } from '../lib/api';
 
 // ─── JWT decode ───────────────────────────────────────────────────────────────
@@ -519,16 +520,17 @@ function buildCurl(c: ConnectionDetail): string {
   const headers = c.req_headers ?? {};
   const url = c.req_host ? `${c.req_host}${c.req_url}` : c.req_url;
 
-  const parts: string[] = [`curl -X ${c.req_method}`, `  '${url}'`];
+  const parts: string[] = [`curl -X ${c.req_method}`, `  ${shellQuote(url)}`];
 
   for (const [k, v] of Object.entries(headers)) {
     if (CURL_SKIP_HEADERS.has(k.toLowerCase())) continue;
-    const val = (Array.isArray(v) ? v.join(', ') : v).replace(/'/g, "'\\''");
-    parts.push(`  -H '${k}: ${val}'`);
+    const val = Array.isArray(v) ? v.join(', ') : v;
+    parts.push(`  -H ${shellQuote(`${k}: ${val}`)}`);
   }
 
   if (c.req_body) {
-    parts.push(`  --data '${c.req_body.replace(/'/g, "'\\''")}'`);
+    // --data-raw: plain --data would read a local file for a body starting with @
+    parts.push(`  --data-raw ${shellQuote(c.req_body)}`);
   }
 
   return parts.join(' \\\n');

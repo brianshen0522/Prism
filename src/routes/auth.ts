@@ -69,6 +69,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(429).send({ error: LOGIN_THROTTLED_ERROR });
     }
 
+    // Counted before the lookup so parallel guesses cannot all pass the check above
+    recordLoginFailure(request.ip, username);
+
     const user = await gazelle.gazelleUser.findUnique({
       where: { username },
       include: { roles: true, institution: true },
@@ -76,7 +79,6 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Account state is only revealed to callers who know the password
     if (!user || !verifyPassword(password, user.password)) {
-      recordLoginFailure(request.ip, username);
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
     clearLoginFailures(request.ip, username);

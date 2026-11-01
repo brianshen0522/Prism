@@ -1,5 +1,6 @@
 import path from 'path';
-import Fastify from 'fastify';
+import { STATUS_CODES } from 'http';
+import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
 import { config } from './config';
@@ -39,6 +40,18 @@ export async function buildApp() {
     logger: {
       level: config.app.env === 'production' ? 'info' : 'debug',
     },
+  });
+
+  // Fastify would otherwise return raw driver messages, which describe queries and hosts
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+    if (status >= 500) request.log.error(error);
+    const label = STATUS_CODES[status] ?? 'Error';
+    return reply.status(status).send({
+      statusCode: status,
+      error: label,
+      message: status >= 500 ? label : error.message,
+    });
   });
 
   await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'] });

@@ -84,13 +84,15 @@ async function authenticateWithCredentials(body: unknown, ip: string) {
     };
   }
 
+  // Counted before the lookup so parallel guesses cannot all pass the check above
+  recordLoginFailure(ip, username);
+
   const user = await gazelle.gazelleUser.findUnique({
     where: { username },
     include: { roles: true, institution: true },
   });
 
   if (!user || !verifyPassword(password, user.password)) {
-    recordLoginFailure(ip, username);
     return {
       ok: false as const,
       status: 401,

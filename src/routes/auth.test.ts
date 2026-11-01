@@ -214,6 +214,54 @@ describe('Auth routes', () => {
       }
     });
 
+    it('counts parallel guesses against the failure limit', async () => {
+      vi.mocked(gazelle.gazelleUser.findUnique).mockImplementation((() => new Promise((resolve) => {
+        setTimeout(() => resolve(MOCK_USER), 10);
+      })) as any);
+
+      const results = await Promise.all(Array.from({ length: 40 }, () => app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: 'parallel-probe', password: 'wrong' },
+      })));
+
+      expect(results.filter((res) => res.statusCode === 401)).toHaveLength(10);
+      expect(results.filter((res) => res.statusCode === 429)).toHaveLength(30);
+      expect(gazelle.gazelleUser.findUnique).toHaveBeenCalledTimes(10);
+    });
+
+    it('hides driver messages on unexpected errors', async () => {
+      vi.spyOn(app.log, 'error').mockImplementation(() => undefined);
+      vi.mocked(gazelle.gazelleUser.findUnique).mockRejectedValue(
+        new Error("Can't reach database server at internal-db.example:5432"),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: 'error-probe', password: 'wrong' },
+      });
+
+      expect(res.statusCode).toBe(500);
+      expect(res.json()).toEqual({
+        statusCode: 500,
+        error: 'Internal Server Error',
+        message: 'Internal Server Error',
+      });
+    });
+
+    it('keeps client error details', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        headers: { 'content-type': 'application/json' },
+        payload: '{not json',
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/JSON/);
+    });
+
     it('throttles repeated failures for an account, then recovers on the next window', async () => {
       vi.mocked(gazelle.gazelleUser.findUnique).mockResolvedValue(MOCK_USER as any);
       const attempt = (password: string) => app.inject({

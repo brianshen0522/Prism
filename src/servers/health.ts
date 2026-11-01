@@ -337,7 +337,10 @@ async function tickHeartbeat() {
 
 export async function initializeServerHealth() {
   if (intervalHandle) return;
-  intervalHandle = setInterval(() => { void tickHeartbeat(); }, HEARTBEAT_TICK_MS);
+  // Runs detached: a rejected tick (for example a busy DB pool) must not end the process
+  intervalHandle = setInterval(() => {
+    tickHeartbeat().catch((error) => console.error('[Heartbeat] tick failed:', error));
+  }, HEARTBEAT_TICK_MS);
   await tickHeartbeat();
 }
 

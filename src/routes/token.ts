@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { prism } from '../db/prism';
 import { gazelle } from '../db/gazelle';
 import { verifyPassword } from '../lib/password';
+import {
+  LOGIN_THROTTLED_ERROR,
+  clearLoginFailures,
+  isLoginThrottled,
+  recordLoginFailure,
+} from '../lib/login-throttle';
 import { verifyAccessToken } from '../lib/jwt';
 import { authenticate } from '../plugins/authenticate';
 import {
@@ -59,7 +65,7 @@ function formatValidationResult(input: {
   };
 }
 
-async function authenticateWithCredentials(body: unknown) {
+async function authenticateWithCredentials(body: unknown, ip: string) {
   const parsed = tokenCredentialsBody.safeParse(body);
   if (!parsed.success) {
     return {
@@ -70,18 +76,28 @@ async function authenticateWithCredentials(body: unknown) {
   }
 
   const { username, password } = parsed.data;
+  if (isLoginThrottled(ip, username)) {
+    return {
+      ok: false as const,
+      status: 429,
+      error: LOGIN_THROTTLED_ERROR,
+    };
+  }
+
   const user = await gazelle.gazelleUser.findUnique({
     where: { username },
     include: { roles: true, institution: true },
   });
 
   if (!user || !verifyPassword(password, user.password)) {
+    recordLoginFailure(ip, username);
     return {
       ok: false as const,
       status: 401,
       error: 'Invalid credentials',
     };
   }
+  clearLoginFailures(ip, username);
 
   if (user.blocked) {
     return {
@@ -144,7 +160,7 @@ async function resolveSubjectFromRequest(req: any) {
     }
   }
 
-  const authResult = await authenticateWithCredentials(req.body);
+  const authResult = await authenticateWithCredentials(req.body, req.ip);
   if (!authResult.ok) {
     return authResult;
   }

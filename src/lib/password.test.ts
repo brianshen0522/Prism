@@ -8,19 +8,19 @@ function md5(s: string) {
 
 describe('verifyPassword', () => {
   it('returns true for a matching password', () => {
-    expect(verifyPassword('Shen@9429', md5('Shen@9429'))).toBe(true);
+    expect(verifyPassword('Test-Passw0rd', md5('Test-Passw0rd'))).toBe(true);
   });
 
   it('returns false for a wrong password', () => {
-    expect(verifyPassword('wrong', md5('Shen@9429'))).toBe(false);
+    expect(verifyPassword('wrong', md5('Test-Passw0rd'))).toBe(false);
   });
 
   it('is case-sensitive', () => {
-    expect(verifyPassword('shen@9429', md5('Shen@9429'))).toBe(false);
+    expect(verifyPassword('test-passw0rd', md5('Test-Passw0rd'))).toBe(false);
   });
 
   it('returns false for an empty input against a real hash', () => {
-    expect(verifyPassword('', md5('Shen@9429'))).toBe(false);
+    expect(verifyPassword('', md5('Test-Passw0rd'))).toBe(false);
   });
 
   it('correctly verifies an empty password against its own hash', () => {

@@ -37,7 +37,7 @@ import * as participantToken from '../lib/participant-token';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
-const PASSWORD = 'Shen@9429';
+const PASSWORD = 'Test-Passw0rd';
 const PASSWORD_HASH = crypto.createHash('md5').update(PASSWORD).digest('hex');
 
 const MOCK_USER = {
@@ -113,7 +113,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(200);
@@ -150,7 +150,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(500);
@@ -190,11 +190,50 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(401);
       expect(res.json().error).toMatch(/blocked/i);
+    });
+
+    it('does not reveal account state when the password is wrong', async () => {
+      for (const state of [{ blocked: true }, { activated: false }]) {
+        vi.mocked(gazelle.gazelleUser.findUnique).mockResolvedValue(
+          { ...MOCK_USER, ...state } as any,
+        );
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          payload: { username: 'state-probe', password: 'wrong' },
+        });
+
+        expect(res.statusCode).toBe(401);
+        expect(res.json().error).toBe('Invalid credentials');
+      }
+    });
+
+    it('throttles repeated failures for an account, then recovers on the next window', async () => {
+      vi.mocked(gazelle.gazelleUser.findUnique).mockResolvedValue(MOCK_USER as any);
+      const attempt = (password: string) => app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: 'throttle-probe', password },
+      });
+
+      for (let i = 0; i < 10; i += 1) {
+        expect((await attempt('wrong')).statusCode).toBe(401);
+      }
+      expect((await attempt('wrong')).statusCode).toBe(429);
+      expect((await attempt(PASSWORD)).statusCode).toBe(429);
+
+      vi.useFakeTimers({ now: Date.now() + 16 * 60 * 1000, toFake: ['Date'] });
+      try {
+        expect((await attempt(PASSWORD)).statusCode).toBe(200);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('returns 401 when user is not activated', async () => {
@@ -205,7 +244,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(401);
@@ -230,7 +269,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(200);
@@ -245,7 +284,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
 
       expect(res.statusCode).toBe(200);
@@ -361,7 +400,7 @@ describe('Auth routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { username: 'brian9429', password: 'Shen@9429' },
+        payload: { username: 'brian9429', password: 'Test-Passw0rd' },
       });
       return res.json() as { access_token: string; refresh_token: string };
     }

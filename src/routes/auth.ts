@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { gazelle } from '../db/gazelle';
 import { prism } from '../db/prism';
 import { verifyPassword } from '../lib/password';
+import {
+  LOGIN_THROTTLED_ERROR,
+  clearLoginFailures,
+  isLoginThrottled,
+  recordLoginFailure,
+} from '../lib/login-throttle';
 import { signAccessToken, JwtPayload } from '../lib/jwt';
 import { generateParticipantToken } from '../lib/participant-token';
 import { createRefreshToken, verifyAndRotateRefreshToken, revokeRefreshToken } from '../lib/tokens';
@@ -59,22 +65,26 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const { username, password } = parsed.data;
 
+    if (isLoginThrottled(request.ip, username)) {
+      return reply.status(429).send({ error: LOGIN_THROTTLED_ERROR });
+    }
+
     const user = await gazelle.gazelleUser.findUnique({
       where: { username },
       include: { roles: true, institution: true },
     });
 
-    if (!user) {
+    // Account state is only revealed to callers who know the password
+    if (!user || !verifyPassword(password, user.password)) {
+      recordLoginFailure(request.ip, username);
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
+    clearLoginFailures(request.ip, username);
     if (user.blocked) {
       return reply.status(401).send({ error: 'Account is blocked' });
     }
     if (!user.activated) {
       return reply.status(401).send({ error: 'Account is not activated' });
-    }
-    if (!verifyPassword(password, user.password)) {
-      return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
     const role = resolveRole(user.roles.map((r) => r.roleId));

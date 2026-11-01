@@ -45,7 +45,7 @@ const userTok = () => `Bearer ${signAccessToken({
   institutionId: INSTITUTION_ID,
   institutionName: INSTITUTION_NAME,
 })}`;
-const PASSWORD = 'Shen@9429';
+const PASSWORD = 'Test-Passw0rd';
 const PASSWORD_HASH = crypto.createHash('md5').update(PASSWORD).digest('hex');
 const MOCK_USER = {
   id: 10,
@@ -333,5 +333,21 @@ describe('participant token routes', () => {
       header_name: 'X-Participant-Token',
       institution_id: INSTITUTION_ID,
     });
+  });
+});
+
+describe('credential throttling on token routes', () => {
+  it('returns 429 once an account has too many failed attempts', async () => {
+    gazelleUserFindUniqueMock.mockResolvedValue(MOCK_USER);
+    const attempt = () => app.inject({
+      method: 'POST',
+      url: '/api/token/current',
+      payload: { username: 'token-throttle-probe', password: 'wrong' },
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      expect((await attempt()).statusCode).toBe(401);
+    }
+    expect((await attempt()).statusCode).toBe(429);
   });
 });

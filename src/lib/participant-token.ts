@@ -92,7 +92,7 @@ export async function ensureParticipantToken(userId: number, institutionId: numb
 }
 
 export function verifyParticipantJwt(token: string): ParticipantTokenPayload {
-  const payload = normalizePayload(jwt.verify(token, config.participantTokenSecret));
+  const payload = normalizePayload(jwt.verify(token, config.participantTokenSecret, { algorithms: ['HS256'] }));
   if (!payload) throw new JsonWebTokenError('invalid participant token payload');
   return payload;
 }

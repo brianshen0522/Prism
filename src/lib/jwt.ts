@@ -18,6 +18,13 @@ export function signAccessToken(payload: JwtPayload): string {
   });
 }
 
+const ROLES: readonly unknown[] = ['admin', 'monitor', 'oauth2', 'user'];
+
 export function verifyAccessToken(token: string): JwtPayload {
-  return jwt.verify(token, config.jwt.secret) as unknown as JwtPayload;
+  const payload = jwt.verify(token, config.jwt.secret, { algorithms: ['HS256'] }) as unknown as JwtPayload;
+  // Traffic scoping is built from these claims, so never accept a token without them
+  if (typeof payload.sub !== 'number' || !ROLES.includes(payload.role)) {
+    throw new jwt.JsonWebTokenError('invalid access token payload');
+  }
+  return payload;
 }

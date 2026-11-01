@@ -58,4 +58,21 @@ describe('signAccessToken / verifyAccessToken', () => {
       expect(verifyAccessToken(token).role).toBe(role);
     }
   });
+
+  it('rejects a token signed with another algorithm', async () => {
+    const { default: jwt } = await import('jsonwebtoken');
+    const token = jwt.sign(
+      { sub: 1, username: 'x', role: 'admin' },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS512' },
+    );
+    expect(() => verifyAccessToken(token)).toThrow();
+  });
+
+  it('rejects a correctly signed token without user claims', async () => {
+    const { default: jwt } = await import('jsonwebtoken');
+    const secret = process.env.JWT_SECRET!;
+    expect(() => verifyAccessToken(jwt.sign({ userId: 1, institutionId: 2 }, secret))).toThrow();
+    expect(() => verifyAccessToken(jwt.sign({ sub: 1, role: 'root' }, secret))).toThrow();
+  });
 });

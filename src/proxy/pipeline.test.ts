@@ -676,3 +676,22 @@ describe('request body cap', () => {
     }
   });
 });
+
+describe('response body cap', () => {
+  it('answers 502 and marks the connection failed for an oversized response', async () => {
+    const proxyConfig = config.proxy as { maxBodyBytes: number };
+    const original = proxyConfig.maxBodyBytes;
+    proxyConfig.maxBodyBytes = 16;
+    try {
+      const res = await request({ path: '/big' });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toBe('Bad Gateway: response too large');
+      expect(prism.connection.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: { status: 'error' },
+      }));
+    } finally {
+      proxyConfig.maxBodyBytes = original;
+    }
+  });
+});

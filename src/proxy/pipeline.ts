@@ -63,7 +63,7 @@ const HOP_BY_HOP = new Set([
 
 class BodyTooLargeError extends Error {}
 
-function collectBody(stream: http.IncomingMessage, maxBytes = Infinity): Promise<Buffer> {
+function collectBody(stream: http.IncomingMessage, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -395,7 +395,21 @@ export async function handleRequest(
   }
 
   // Step 6 — Collect response body
-  const resBodyBuffer = await collectBody(proxyRes);
+  let resBodyBuffer: Buffer;
+  try {
+    resBodyBuffer = await collectBody(proxyRes, config.proxy.maxBodyBytes);
+  } catch (err) {
+    if (!(err instanceof BodyTooLargeError)) throw err;
+    proxyRes.destroy();
+    await prism.connection.update({
+      where: { id: connection.id },
+      data: { status: 'error' },
+    });
+    wsManager.emitConnectionError({ id: connection.id, userId, institutionId, serverId: server.id, isPathIgnored });
+    res.writeHead(502, { 'Content-Type': 'text/plain' });
+    res.end('Bad Gateway: response too large');
+    return;
+  }
   const resTimestamp = new Date();
   const durationMs = Date.now() - startMs;
 

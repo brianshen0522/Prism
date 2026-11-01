@@ -447,3 +447,32 @@ describe('GET /api/connections/:id', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('text search limits', () => {
+  const search = (query: Record<string, string>) => app.inject({
+    method: 'GET',
+    url: '/api/connections',
+    query,
+    headers: { authorization: userToken() },
+  });
+  const terms = (count: number) => Array.from({ length: count }, (_, i) => ({ term: `t${i}` }));
+
+  it('runs up to 20 conditions', async () => {
+    const res = await search({ sq: JSON.stringify(terms(20)) });
+    expect(res.statusCode).toBe(200);
+    expect(prism.$queryRawUnsafe).toHaveBeenCalledTimes(20);
+  });
+
+  it('refuses more than 20 sq conditions without touching the database', async () => {
+    const res = await search({ sq: JSON.stringify(terms(21)) });
+    expect(res.statusCode).toBe(400);
+    expect(prism.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than 20 text filters without touching the database', async () => {
+    const filters = terms(21).map((t) => ({ field: 'text', ...t }));
+    const res = await search({ filters: JSON.stringify(filters) });
+    expect(res.statusCode).toBe(400);
+    expect(prism.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+});

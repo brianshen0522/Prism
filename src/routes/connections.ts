@@ -45,6 +45,9 @@ const SCOPE_COL: Record<string, string> = {
 };
 const ALL_SCOPE_KEYS = Object.keys(SCOPE_COL);
 
+// Each text condition scans stored headers and bodies, and they run in parallel
+const MAX_TEXT_CONDITIONS = 20;
+
 const authenticateHook = [authenticate];
 
 async function canViewAllTraffic(role: string): Promise<boolean> {
@@ -320,6 +323,9 @@ export async function connectionRoutes(fastify: FastifyInstance) {
 
     if (parsedFilters.length > 0) {
       const textFilters = parsedFilters.filter((filter) => filter.field === 'text');
+      if (textFilters.length > MAX_TEXT_CONDITIONS) {
+        return reply.status(400).send({ error: `At most ${MAX_TEXT_CONDITIONS} text search conditions are allowed` });
+      }
 
       const textIds = await resolveTextSearchIds(
         textFilters
@@ -431,6 +437,9 @@ export async function connectionRoutes(fastify: FastifyInstance) {
       }
 
       const searchConditions = parseSearchConditions(sq, search);
+      if (searchConditions.length > MAX_TEXT_CONDITIONS) {
+        return reply.status(400).send({ error: `At most ${MAX_TEXT_CONDITIONS} text search conditions are allowed` });
+      }
       const sqLogicVal = sq_logic === 'or' ? 'or' : 'and';
       const textIds = await resolveTextSearchIds(searchConditions, sqLogicVal);
       if (textIds) filterClauses.push({ logic: 'and', clause: { id: { in: textIds } } });

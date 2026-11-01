@@ -54,9 +54,17 @@ function pathMatches(expected: string | null, actual: string): boolean {
 }
 
 function extractBearerToken(headers: Record<string, string | string[]>): string | null {
-  const auth = firstHeader(headers.authorization);
-  if (auth?.startsWith('Bearer ')) return auth.slice(7).trim();
-  return null;
+  // Auth schemes are case-insensitive, so resource servers accept any casing
+  const match = firstHeader(headers.authorization)?.match(/^bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+function extractQueryToken(urlOrPath: string): string | null {
+  try {
+    return new URL(urlOrPath, 'http://placeholder').searchParams.get('access_token') || null;
+  } catch {
+    return null;
+  }
 }
 
 function parseBodyObject(body: string | null): Record<string, unknown> | null {
@@ -115,7 +123,9 @@ export function classifyOAuthConnection(input: {
 }): OAuthExtract {
   const participantHeader = input.participantHeaderName.toLowerCase();
   const participantTokenPresent = !!firstHeader(input.connection.reqHeaders[participantHeader]);
-  const requestBearer = extractBearerToken(input.connection.reqHeaders) ?? extractTokenFromBody(input.connection.reqBody);
+  const requestBearer = extractBearerToken(input.connection.reqHeaders)
+    ?? extractTokenFromBody(input.connection.reqBody)
+    ?? extractQueryToken(input.connection.reqUrl);
   const requestRefreshToken = extractStringField(input.connection.reqBody, 'refresh_token');
   const issuedAccessToken = extractIssuedAccessToken(input.connection.resBody);
   const issuedRefreshToken = extractStringField(input.connection.resBody, 'refresh_token');

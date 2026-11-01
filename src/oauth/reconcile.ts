@@ -727,17 +727,21 @@ const reconcileQueue = new Set<string>();
 let reconcileFlushScheduled = false;
 
 async function flushReconcileQueue() {
-  reconcileFlushScheduled = false;
-  const ids = Array.from(reconcileQueue);
-  reconcileQueue.clear();
+  // One drain at a time: pipeline state is recomputed read-then-write, so an
+  // overlapping drain could store a stale legal flag
+  while (reconcileQueue.size > 0) {
+    const ids = Array.from(reconcileQueue);
+    reconcileQueue.clear();
 
-  for (const id of ids) {
-    try {
-      await reconcileOAuthPipeline(id);
-    } catch (error) {
-      console.error('OAuth reconcile failed', { connectionId: id, error });
+    for (const id of ids) {
+      try {
+        await reconcileOAuthPipeline(id);
+      } catch (error) {
+        console.error('OAuth reconcile failed', { connectionId: id, error });
+      }
     }
   }
+  reconcileFlushScheduled = false;
 }
 
 export function enqueueOAuthReconcile(connectionId: string) {

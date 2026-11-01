@@ -158,11 +158,11 @@ PROXY_DB_USER=prism
 PROXY_DB_PASS=changeme          # Required
 
 # Gazelle DB (external, read-only, IHE server)
-GAZELLE_DB_HOST=162.38.2.12
+GAZELLE_DB_HOST=gazelle-db.example.com
 GAZELLE_DB_PORT=5432
 GAZELLE_DB_NAME=gazelle
-GAZELLE_DB_USER=gazelle
-GAZELLE_DB_PASS=gazelle
+GAZELLE_DB_USER=gazelle_readonly
+GAZELLE_DB_PASS=gazelle_password
 GAZELLE_DB_SSL=false
 
 # App

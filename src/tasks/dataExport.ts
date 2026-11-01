@@ -9,7 +9,7 @@ export async function runExport(taskId: string, username: string): Promise<void>
   try {
     ensureExportDir();
     const fp = exportFilePath(taskId);
-    const stream = fs.createWriteStream(fp, 'utf8');
+    const stream = fs.createWriteStream(fp, { encoding: 'utf8', mode: 0o600 });
 
     const w = (s: string): Promise<void> =>
       new Promise((res, rej) => stream.write(s, (e) => (e ? rej(e) : res())));

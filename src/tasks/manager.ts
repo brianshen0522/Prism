@@ -5,7 +5,7 @@ import { prism } from '../db/prism';
 export const EXPORT_DIR = '/tmp/prism-exports';
 
 export function ensureExportDir() {
-  fs.mkdirSync(EXPORT_DIR, { recursive: true });
+  fs.mkdirSync(EXPORT_DIR, { recursive: true, mode: 0o700 });
 }
 
 export function exportFilePath(taskId: string) {

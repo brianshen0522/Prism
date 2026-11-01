@@ -17,6 +17,23 @@ import { dataRoutes } from './routes/data';
 import { setupWebSocket } from './ws/setup';
 import { initializeServerHealth, shutdownServerHealth } from './servers/health';
 
+// Captured traffic is rendered in the UI, so keep the page locked down
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+};
+
 export async function buildApp() {
   const app = Fastify({
     logger: {
@@ -25,6 +42,10 @@ export async function buildApp() {
   });
 
   await app.register(cors, { origin: true });
+
+  app.addHook('onSend', async (_req, reply) => {
+    reply.headers(SECURITY_HEADERS);
+  });
 
   const bp = config.app.basePath;
   const api = `${bp}/api`;

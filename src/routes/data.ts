@@ -69,7 +69,8 @@ export async function dataRoutes(fastify: FastifyInstance) {
   fastify.post(
     '/admin/data/import',
     {
-      preHandler: adminOnly,
+      // onRequest, not preHandler: authorize before the body is read and parsed
+      onRequest: adminOnly,
       // Allow large bodies for full dataset imports (up to 512 MB)
       bodyLimit: 512 * 1024 * 1024,
     },

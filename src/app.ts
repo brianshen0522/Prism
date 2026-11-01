@@ -41,7 +41,7 @@ export async function buildApp() {
     },
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'] });
 
   app.addHook('onSend', async (_req, reply) => {
     reply.headers(SECURITY_HEADERS);

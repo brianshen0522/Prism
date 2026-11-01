@@ -59,3 +59,25 @@ describe('security headers', () => {
     expect(res.headers['referrer-policy']).toBe('no-referrer');
   });
 });
+
+describe('CORS preflight', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await buildApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('keeps allowing the methods the API uses', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/health',
+      headers: { origin: 'https://client.example.com', 'access-control-request-method': 'PUT' },
+    });
+    expect(res.headers['access-control-allow-methods']).toContain('PUT');
+    expect(res.headers['access-control-allow-methods']).toContain('DELETE');
+  });
+});

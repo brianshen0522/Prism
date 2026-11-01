@@ -5,6 +5,10 @@ services:
       args:
         BASE_PATH: ${BASE_PATH:-}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}:${PROXY_PORT_START:-7001}-${PROXY_PORT_END:-7100}"
     env_file:

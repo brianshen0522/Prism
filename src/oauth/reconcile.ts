@@ -60,12 +60,19 @@ function responseSucceeded(statusCode: number | null | undefined) {
   return typeof statusCode === 'number' && statusCode >= 200 && statusCode < 400;
 }
 
-function participantLinked(
-  connection: { userId?: number | null; institutionId?: number | null; participantTokenPresent?: boolean | null } | null | undefined,
+export function participantLinked(
+  connection: {
+    userId?: number | null;
+    institutionId?: number | null;
+    participantTokenPresent?: boolean | null;
+    participantTokenValid?: boolean | null;
+  } | null | undefined,
   participantUserId: number | null | undefined,
   participantInstitutionId: number | null | undefined,
 ) {
   if (!connection?.participantTokenPresent) return false;
+  // Expired and revoked tokens still decode to a user, but no longer vouch for them
+  if (connection.participantTokenValid === false) return false;
   if (typeof participantInstitutionId === 'number' && typeof connection.institutionId === 'number') {
     return connection.institutionId === participantInstitutionId;
   }

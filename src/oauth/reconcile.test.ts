@@ -6,6 +6,7 @@ import {
   extractRefreshTokenForDisplay,
   findValidationForResourceCall,
   findMatchingValidationCall,
+  participantLinked,
   summarizeDiagnostics,
 } from './reconcile';
 
@@ -246,5 +247,25 @@ describe('refresh grant extraction helpers', () => {
   it('extracts grant_type and refresh_token from form encoded request bodies', () => {
     expect(extractGrantType('grant_type=refresh_token&refresh_token=rt_456')).toBe('refresh_token');
     expect(extractRefreshTokenForDisplay('grant_type=refresh_token&refresh_token=rt_456')).toBe('rt_456');
+  });
+});
+
+describe('participantLinked', () => {
+  const connection = { userId: 7, institutionId: 3, participantTokenPresent: true };
+
+  it('links a valid token to its institution', () => {
+    expect(participantLinked({ ...connection, participantTokenValid: true }, 7, 3)).toBe(true);
+  });
+
+  it('links a connection identified without a participant token check', () => {
+    expect(participantLinked({ ...connection, participantTokenValid: null }, 7, 3)).toBe(true);
+  });
+
+  it('does not link an expired or revoked token even though it decodes to the participant', () => {
+    expect(participantLinked({ ...connection, participantTokenValid: false }, 7, 3)).toBe(false);
+  });
+
+  it('does not link a connection with no token', () => {
+    expect(participantLinked({ ...connection, participantTokenPresent: false }, 7, 3)).toBe(false);
   });
 });

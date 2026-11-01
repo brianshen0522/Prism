@@ -4,3 +4,6 @@ dist
 client/dist
 .git
 *.md
+.env
+.env.*
+!.env.example

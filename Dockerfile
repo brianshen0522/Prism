@@ -31,6 +31,8 @@ COPY --from=builder /app/package.json ./package.json
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
+USER node
+
 EXPOSE 3000
 
 CMD ["./entrypoint.sh"]
